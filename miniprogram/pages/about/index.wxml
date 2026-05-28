@@ -1,0 +1,29 @@
+<view class="page about-page">
+  <view class="about-hero">
+    <view class="about-kicker">{{festivalName}}</view>
+    <view class="about-title">赶场愉快</view>
+    <view class="about-subtitle">一个影迷自制的电影节选片、挑场次和排片工具。</view>
+  </view>
+
+  <view class="about-section">
+    <view class="section-title">创作者</view>
+    <view class="section-body">Shire</view>
+  </view>
+
+  <view class="about-section">
+    <view class="section-title">链接</view>
+    <view class="section-body">
+      <text class="about-link" user-select="true" bindtap="copyGithubUrl">GitHub：{{githubUrl}}</text>
+    </view>
+  </view>
+
+  <view class="about-section">
+    <view class="section-title">致谢</view>
+    <view class="section-body">感谢电影节官方公开信息、影迷整理资料，感谢「坚看眠聊」群友的支持，以及所有帮忙试用和反馈的人。</view>
+  </view>
+
+  <view class="about-section">
+    <view class="section-title">说明</view>
+    <view class="section-body">排片、票务和活动信息可能变化，请以官方发布为准。智能排片只做辅助判断。</view>
+  </view>
+</view>

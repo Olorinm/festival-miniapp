@@ -1,0 +1,63 @@
+<view wx:if="{{film}}" class="page detail-page">
+  <view class="film-head tone-{{film.interest.tone}}">
+    <view class="head-mark">{{film.interest.shortLabel ? film.interest.shortLabel : '未选'}}</view>
+    <view class="head-main">
+      <view class="film-title">{{film.cnTitle}}</view>
+      <view wx:if="{{film.enTitle}}" class="film-en">{{film.enTitle}}</view>
+      <view wx:if="{{film.metaLine1}}" class="film-meta">{{film.metaLine1}}</view>
+      <view wx:if="{{film.metaLine2}}" class="film-meta">{{film.metaLine2}}</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">想看程度</view>
+    <view class="mark-row">
+      <view
+        wx:for="{{markOptions}}"
+        wx:key="key"
+        class="mark-button {{film.mark === item.key ? 'is-picked' : ''}} tone-{{item.tone}}"
+        data-mark="{{item.key}}"
+        data-current-mark="{{film.mark}}"
+        bindtap="markFilm"
+      >
+        {{item.shortLabel}}
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">可选场次</view>
+    <view wx:for="{{screenings}}" wx:key="id" class="screening-card {{item.selected ? 'is-selected' : ''}} {{item.conflict ? 'has-conflict' : ''}}">
+      <view class="screening-main">
+        <view class="screening-time">
+          <text class="day">{{item.dayLabel}}</text>
+          <text class="time mono">{{item.timeRange}}</text>
+        </view>
+        <view class="venue">{{item.cinema}} · {{item.hall}}</view>
+        <view class="ticket-row">
+          <text>{{item.ticketPlan}}</text>
+          <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
+        </view>
+        <view wx:if="{{item.conflict}}" class="conflict">冲突：{{item.conflictText}}</view>
+      </view>
+      <view class="screening-actions">
+        <view
+          class="pick-button {{item.selected ? 'is-on' : ''}}"
+          data-id="{{item.id}}"
+          hover-class="action-tap"
+          hover-start-time="0"
+          hover-stay-time="80"
+          bindtap="toggleScreening"
+        >
+          <view class="pick-symbol {{item.selected ? 'is-filled' : ''}}">
+            <view class="action-glyph {{item.selected ? 'is-check' : 'is-plus'}}">
+              <view class="glyph-line is-a"></view>
+              <view class="glyph-line is-b"></view>
+            </view>
+          </view>
+          <text class="pick-label">{{item.selected ? '已排' : '加入排片'}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,216 @@
+<view class="app-custom-nav" style="height: {{navTotalHeight}}px;">
+  <view class="app-nav-row" style="top: {{navTop}}px; height: {{navHeight}}px; padding-right: {{navRight}}px;">
+    <navigator class="app-about-entry" url="/pages/about/index" hover-class="app-about-tap">
+      <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
+      <text>关于</text>
+    </navigator>
+    <view class="app-nav-title is-with-context">
+      <text class="app-nav-main">挑场次</text>
+      <text class="app-nav-context">{{festivalName}}</text>
+    </view>
+  </view>
+</view>
+
+<view class="page schedule-page" style="padding-top: {{contentTop}}px;">
+  <view class="schedule-top">
+    <view class="schedule-tool-row">
+      <view class="search-box schedule-search">
+        <text class="search-icon">⌕</text>
+        <input class="search-input" value="{{query}}" bindinput="onSearchInput" placeholder="搜片名、导演、影院" confirm-type="search" />
+      </view>
+
+      <view class="smart-entry" bindtap="openSmartPlan" hover-class="smart-entry-tap">
+        <view class="smart-icon">
+          <view class="smart-spark">
+            <view class="smart-spark-point is-top"></view>
+            <view class="smart-spark-point is-right"></view>
+            <view class="smart-spark-point is-bottom"></view>
+            <view class="smart-spark-point is-left"></view>
+            <view class="smart-spark-core"></view>
+          </view>
+        </view>
+        <text class="smart-entry-label">智能排片</text>
+        <text class="smart-arrow">›</text>
+      </view>
+    </view>
+
+    <view class="schedule-filter-bar">
+      <view class="scope-segment">
+        <block
+          wx:for="{{filterChips}}"
+          wx:key="key"
+        >
+          <view
+            wx:if="{{item.type === 'scope'}}"
+            class="scope-option {{item.active ? 'is-active' : ''}}"
+            data-type="{{item.type}}"
+            data-value="{{item.value}}"
+            bindtap="tapFilter"
+          >
+            <text class="filter-label">{{item.label}}</text>
+          </view>
+        </block>
+      </view>
+
+      <scroll-view class="tool-filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="tool-filter-row">
+          <block
+            wx:for="{{filterChips}}"
+            wx:key="key"
+          >
+            <view
+              wx:if="{{item.type !== 'scope'}}"
+              class="tool-filter-chip {{item.active ? 'is-active' : ''}}"
+              data-type="{{item.type}}"
+              data-value="{{item.value}}"
+              bindtap="tapFilter"
+            >
+              <text class="filter-label">{{item.label}}</text>
+              <text class="filter-triangle">▼</text>
+            </view>
+          </block>
+        </view>
+      </scroll-view>
+    </view>
+
+    <scroll-view wx:if="{{filterOptions.length}}" class="filter-option-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="filter-option-row">
+        <view
+          wx:for="{{filterOptions}}"
+          wx:key="key"
+          class="filter-option {{item.picked ? 'is-picked' : ''}}"
+          data-type="{{activeFilter}}"
+          data-value="{{item.key}}"
+          bindtap="selectFilterOption"
+        >
+          <text class="filter-option-label">{{item.label}}</text>
+          <text class="filter-option-count">{{item.count}}</text>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{screeningCount === 0}}" class="empty-state">
+    <view wx:if="{{emptyShowActions}}" class="empty-start">
+      <view class="empty-paragraph">
+        <view class="empty-sentence">
+          <text>还没有标记任何电影，你可以 </text>
+          <text class="empty-inline-link" bindtap="goFilms" hover-class="empty-inline-tap">选电影›</text>
+        </view>
+        <view class="empty-sentence">
+          <text>也可以看 </text>
+          <text class="empty-inline-link" bindtap="showAllScreenings" hover-class="empty-inline-tap">全部场次›</text>
+          <text>，打开完整时间表</text>
+        </view>
+        <view class="empty-sentence">
+          <text>也可以讲讲需求，让 </text>
+          <text class="empty-inline-link" bindtap="openSmartPlan" hover-class="empty-inline-tap">智能排片›</text>
+          <text> 排一版</text>
+        </view>
+      </view>
+    </view>
+    <view wx:else class="empty-copy">
+      <view class="empty-line">{{emptyTitle}}</view>
+    </view>
+  </view>
+
+  <view class="screening-days">
+    <view wx:for="{{screeningGroups}}" wx:for-item="group" wx:key="date" class="screening-day">
+      <view wx:if="{{showDayHeaders}}" class="screening-day-head" data-day="{{group.date}}" bindtap="toggleDayGroup">
+        <view class="screening-day-left">
+          <text class="screening-day-caret {{group.expanded ? 'is-open' : ''}}">{{group.expanded ? '⌄' : '›'}}</text>
+          <text class="screening-day-label">{{group.headerText}}</text>
+        </view>
+        <view class="screening-day-count">{{group.count}} 场</view>
+      </view>
+
+      <view wx:if="{{group.expanded}}" class="screening-list">
+        <view wx:for="{{group.items}}" wx:for-item="item" wx:key="id" class="timeline-item {{item.selected ? 'is-selected' : ''}} {{item.conflict ? 'has-conflict' : ''}}">
+          <view class="timeline-rail">
+            <view class="time-stamp">
+              <text class="start mono">{{item.start}}</text>
+              <text class="end mono">{{item.end}}</text>
+            </view>
+            <view class="timeline-node {{item.selected ? 'is-selected' : ''}} {{item.conflict ? 'has-conflict' : ''}}">
+              <view wx:if="{{item.conflict}}" class="conflict-cross">
+                <view class="conflict-cross-line is-a"></view>
+                <view class="conflict-cross-line is-b"></view>
+              </view>
+            </view>
+          </view>
+
+          <view class="screening-card {{item.selected ? 'is-selected' : ''}}">
+            <navigator class="screening-body" url="/pages/film/detail?id={{item.filmId}}">
+              <view class="screen-title-row">
+                <view class="screen-title">{{item.cnTitle}}</view>
+              </view>
+              <view wx:if="{{item.screenMeta}}" class="screen-meta">{{item.screenMeta}}</view>
+              <view class="venue-line">{{item.cinema}} · {{item.hall}}</view>
+              <view class="tag-line">
+                <text class="interest tone-{{item.interestTone}}">{{item.interestLabel}}</text>
+                <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
+                <text class="ticket">{{item.ticket}}</text>
+              </view>
+            </navigator>
+
+            <view class="screening-actions">
+              <view
+                class="pick-button {{item.selected ? 'is-on' : ''}} {{item.filmScheduled && !item.selected ? 'is-switch' : ''}} {{item.pickConflict ? 'has-conflict' : ''}}"
+                data-id="{{item.id}}"
+                hover-class="action-tap"
+                hover-start-time="0"
+                hover-stay-time="80"
+                bindtap="toggleScreening"
+              >
+                <view class="pick-symbol {{item.selected ? 'is-filled' : ''}}">
+                  <view class="action-glyph {{item.selected ? 'is-check' : 'is-plus'}}">
+                    <view class="glyph-line is-a"></view>
+                    <view class="glyph-line is-b"></view>
+                  </view>
+                </view>
+                <text class="pick-label">{{item.selected ? '已排' : item.filmScheduled ? '换到这场' : item.pickConflict ? '仍选' : '加入排片'}}</text>
+              </view>
+              <text wx:if="{{item.filmScheduled && !item.selected}}" class="action-note">已在排片中</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{smartSheetOpen}}" class="smart-mask" bindtap="closeSmartPlan">
+    <view class="smart-sheet" catchtap="noop">
+      <view class="smart-head">
+        <view class="smart-title">智能排片</view>
+        <view class="smart-close" bindtap="closeSmartPlan">×</view>
+      </view>
+      <view class="smart-input-shell {{smartInputFocus ? 'is-focused' : ''}}" bindtap="focusSmartInput">
+        <view wx:if="{{!smartInstruction && !smartInputFocus}}" class="smart-field-prompt">
+          <view class="smart-prompt-title">输入你的偏好让 AI 帮你排片，比如：</view>
+          <view class="smart-prompt-line">- 优先大光明电影院</view>
+          <view class="smart-prompt-line">- 工作日七点前不要排，但周五六点都都可以</view>
+          <view class="smart-prompt-line">- 周末一天最多三场</view>
+        </view>
+        <textarea
+          class="smart-input {{smartInstruction || smartInputFocus ? 'has-value' : ''}}"
+          value="{{smartInstruction}}"
+          maxlength="240"
+          auto-height
+          fixed
+          focus="{{smartInputFocus}}"
+          placeholder=""
+          bindfocus="focusSmartInput"
+          bindblur="blurSmartInput"
+          bindinput="inputSmartInstruction"
+        ></textarea>
+      </view>
+      <view class="smart-actions">
+        <view class="smart-secondary" bindtap="closeSmartPlan">取消</view>
+        <view class="smart-primary {{smartPlanning ? 'is-disabled' : ''}}" bindtap="runSmartPlan">
+          <text class="smart-primary-icon">✦</text>
+          <text>{{smartPlanning ? '生成中' : smartPrimaryLabel}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

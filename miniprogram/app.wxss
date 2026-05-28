@@ -1,0 +1,381 @@
+page {
+  min-height: 100vh;
+  background: #ffffff;
+  color: #161716;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+}
+
+view,
+text,
+input,
+button,
+textarea {
+  box-sizing: border-box;
+}
+
+button {
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+button::after {
+  border: 0;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 24rpx 26rpx 64rpx;
+}
+
+.app-custom-nav {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+}
+
+.app-nav-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 24rpx;
+  box-sizing: border-box;
+}
+
+.app-nav-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: #171917;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
+
+.app-nav-title.is-with-context {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  max-width: 430rpx;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.app-nav-main {
+  display: block;
+  flex: 0 0 auto;
+  color: #171917;
+  font-size: 17px;
+  font-weight: 520;
+  line-height: 1;
+}
+
+.app-nav-context {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #7d837c;
+  font-size: 20rpx;
+  font-weight: 560;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-about-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  height: 100%;
+  color: #747a73;
+  font-size: 22rpx;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.app-about-icon {
+  display: block;
+  width: 30rpx;
+  height: 30rpx;
+  flex: 0 0 auto;
+}
+
+.app-about-tap {
+  opacity: 0.62;
+}
+
+.smart-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  flex: 0 0 auto;
+  min-width: 154rpx;
+  height: 58rpx;
+  padding: 0 2rpx 0 10rpx;
+  color: #171917;
+  font-size: 22rpx;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.smart-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42rpx;
+  height: 42rpx;
+  color: #c89a3a;
+  animation: smart-twirl 4.8s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+.smart-spark {
+  position: relative;
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.smart-spark-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 2rpx;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.smart-spark-point {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.smart-spark-point.is-top {
+  left: 50%;
+  top: 0;
+  border-left: 8rpx solid transparent;
+  border-right: 8rpx solid transparent;
+  border-bottom: 18rpx solid #c89a3a;
+  transform: translateX(-50%);
+}
+
+.smart-spark-point.is-right {
+  right: 0;
+  top: 50%;
+  border-top: 8rpx solid transparent;
+  border-bottom: 8rpx solid transparent;
+  border-left: 18rpx solid #c89a3a;
+  transform: translateY(-50%);
+}
+
+.smart-spark-point.is-bottom {
+  left: 50%;
+  bottom: 0;
+  border-left: 8rpx solid transparent;
+  border-right: 8rpx solid transparent;
+  border-top: 18rpx solid #c89a3a;
+  transform: translateX(-50%);
+}
+
+.smart-spark-point.is-left {
+  left: 0;
+  top: 50%;
+  border-top: 8rpx solid transparent;
+  border-bottom: 8rpx solid transparent;
+  border-right: 18rpx solid #c89a3a;
+  transform: translateY(-50%);
+}
+
+.smart-entry-tap {
+  opacity: 0.62;
+}
+
+.smart-entry-label {
+  color: #171917;
+  font-size: 22rpx;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.smart-arrow {
+  color: #8f8878;
+  font-size: 28rpx;
+  font-weight: 520;
+  line-height: 1;
+  transform: translateY(-1rpx);
+}
+
+@keyframes smart-twirl {
+  0% {
+    transform: translateY(-1rpx) rotate(0deg);
+  }
+  14% {
+    transform: translateY(-1rpx) rotate(360deg);
+  }
+  100% {
+    transform: translateY(-1rpx) rotate(360deg);
+  }
+}
+
+.page-head {
+  margin-bottom: 24rpx;
+  color: #161716;
+}
+
+.page-festival {
+  font-size: 42rpx;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.page-head-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+  margin-top: 18rpx;
+}
+
+.page-head-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.page-head-title {
+  flex: 0 0 auto;
+  color: #171917;
+  font-size: 31rpx;
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.page-head-cards {
+  display: flex;
+  flex: 1;
+  gap: 8rpx;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.page-head-card {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  min-width: 0;
+  height: 54rpx;
+  padding: 0 14rpx;
+  border: 1rpx solid #eeeeea;
+  border-radius: 8rpx;
+  background: #f7f7f5;
+  white-space: nowrap;
+}
+
+.page-head-card.is-wide {
+  padding: 0 16rpx;
+}
+
+.page-head-card-num {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #171917;
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-head-card-label {
+  display: block;
+  color: #858982;
+  font-size: 21rpx;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.page-head-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  max-width: 160rpx;
+  min-width: 86rpx;
+  height: 58rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid #dfe1dc;
+  border-radius: 8rpx;
+  background: #ffffff;
+  color: #171917;
+  font-size: 23rpx;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-head-action.is-active {
+  border-color: #161716;
+  background: #161716;
+  color: #ffffff;
+}
+
+.page-head-action.is-disabled {
+  color: #a5aaa3;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  height: 72rpx;
+  margin-top: 24rpx;
+  padding: 0 22rpx;
+  border: 1rpx solid #eeeeea;
+  border-radius: 8rpx;
+  background: #f7f7f5;
+}
+
+.search-icon {
+  color: #a5a7a1;
+  font-size: 28rpx;
+}
+
+.search-input {
+  flex: 1;
+  height: 72rpx;
+  font-size: 27rpx;
+}
+
+.muted {
+  color: #6e736f;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.safe-bottom {
+  height: env(safe-area-inset-bottom);
+}

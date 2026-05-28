@@ -1,0 +1,74 @@
+<svg width="750" height="1500" viewBox="0 0 750 1500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="750" height="1500" fill="#FCFCFA"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    .brand { font-size: 22px; font-weight: 650; fill: #20211F; }
+    .meta { font-size: 19px; font-weight: 520; fill: #8F918E; }
+    .headline { font-size: 34px; font-weight: 650; fill: #20211F; letter-spacing: .02em; }
+    .day-ghost { font-size: 250px; font-weight: 300; fill: #E7E7E5; font-family: "Helvetica Neue", Arial, sans-serif; }
+    .date { font-size: 24px; font-weight: 650; fill: #20211F; }
+    .time { font-size: 27px; font-weight: 700; fill: #20211F; font-family: "DIN Alternate", "Avenir Next Condensed", "Helvetica Neue", Arial, sans-serif; }
+    .end { font-size: 18px; font-weight: 450; fill: #8F918E; font-family: "DIN Alternate", "Avenir Next Condensed", "Helvetica Neue", Arial, sans-serif; }
+    .film { font-size: 29px; font-weight: 650; fill: #20211F; }
+    .venue { font-size: 21px; font-weight: 360; fill: #696B68; }
+    .note { font-size: 17px; font-weight: 430; fill: #A0A19E; }
+  </style>
+
+  <text x="74" y="78" class="brand">赶场愉快</text>
+  <text x="74" y="114" class="meta">BJIFF 2026</text>
+  <text x="74" y="170" class="headline">我的排片</text>
+  <text x="555" y="170" text-anchor="end" class="meta">6 场 · 10h34m</text>
+  <line x1="74" y1="218" x2="676" y2="218" stroke="#E1E2DF"/>
+
+  <g transform="translate(0 250)">
+    <text x="176" y="206" class="day-ghost">16</text>
+    <text x="74" y="64" class="date">4/16 周四</text>
+    <line x1="74" y1="92" x2="676" y2="92" stroke="#E1E2DF"/>
+
+    <g transform="translate(74 160)">
+      <text x="0" y="0" class="time">10:00</text>
+      <text x="7" y="34" class="end">12:04</text>
+      <text x="140" y="0" class="film">怡同学少年</text>
+      <text x="140" y="42" class="venue">英皇电影城</text>
+    </g>
+    <g transform="translate(74 280)">
+      <text x="0" y="0" class="time">11:00</text>
+      <text x="7" y="34" class="end">12:38</text>
+      <text x="140" y="0" class="film">机器人总动员</text>
+      <text x="140" y="42" class="venue">中国电影资料馆</text>
+    </g>
+    <g transform="translate(74 400)">
+      <text x="0" y="0" class="time">13:30</text>
+      <text x="7" y="34" class="end">14:54</text>
+      <text x="140" y="0" class="film">心火</text>
+      <text x="140" y="42" class="venue">卢米埃IMAX影城</text>
+    </g>
+  </g>
+
+  <g transform="translate(0 800)">
+    <text x="176" y="206" class="day-ghost">19</text>
+    <text x="74" y="64" class="date">4/19 周日</text>
+    <line x1="74" y1="92" x2="676" y2="92" stroke="#E1E2DF"/>
+
+    <g transform="translate(74 160)">
+      <text x="0" y="0" class="time">11:00</text>
+      <text x="7" y="34" class="end">12:38</text>
+      <text x="140" y="0" class="film">蓝白红三部曲之蓝 4K</text>
+      <text x="140" y="42" class="venue">天幕新彩云国际影城</text>
+    </g>
+    <g transform="translate(74 280)">
+      <text x="0" y="0" class="time">15:30</text>
+      <text x="7" y="34" class="end">17:06</text>
+      <text x="140" y="0" class="film">当哈利遇上莎莉 4K</text>
+      <text x="140" y="42" class="venue">卢米埃IMAX影城</text>
+    </g>
+    <g transform="translate(74 400)">
+      <text x="0" y="0" class="time">21:00</text>
+      <text x="7" y="34" class="end">22:36</text>
+      <text x="140" y="0" class="film">法式火锅</text>
+      <text x="140" y="42" class="venue">北京青年宫电影城</text>
+    </g>
+  </g>
+
+  <text x="676" y="1435" text-anchor="end" class="note">搜索「赶场愉快小程序」一键导入排片表</text>
+</svg>

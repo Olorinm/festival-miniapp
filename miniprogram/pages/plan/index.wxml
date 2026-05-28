@@ -1,0 +1,186 @@
+<view class="app-custom-nav" style="height: {{navTotalHeight}}px;">
+  <view class="app-nav-row" style="top: {{navTop}}px; height: {{navHeight}}px; padding-right: {{navRight}}px;">
+    <navigator class="app-about-entry" url="/pages/about/index" hover-class="app-about-tap">
+      <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
+      <text>关于</text>
+    </navigator>
+    <view class="app-nav-title is-with-context">
+      <text class="app-nav-main">排片表</text>
+      <text class="app-nav-context">{{festivalName}}</text>
+    </view>
+  </view>
+</view>
+
+<view class="page plan-page" style="padding-top: {{contentTop}}px;">
+  <view class="plan-top">
+    <scroll-view class="scheme-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="scheme-row">
+        <view
+          wx:for="{{planSchemes}}"
+          wx:key="id"
+          class="scheme-card {{item.active ? 'is-active' : ''}}"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}"
+          bindtap="selectPlanScheme"
+          bindlongpress="renamePlanScheme"
+        >
+          <text class="scheme-name">{{item.name}}</text>
+        </view>
+        <view class="scheme-card is-new" bindtap="createBlankPlanScheme">
+          <text class="scheme-plus">＋</text>
+          <text class="scheme-meta">新方案</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="current-plan-bar">
+      <view class="current-plan-copy">
+        <text class="current-plan-summary">{{currentSchemeSummary}}</text>
+      </view>
+      <view class="current-plan-actions">
+        <view class="plan-tool-button" bindtap="openImportSheet" hover-class="action-tap">
+          <view class="plan-action-icon is-import"></view>
+          <text>导入</text>
+        </view>
+        <view class="plan-tool-button {{empty ? 'is-disabled' : ''}}" bindtap="exportPlan" hover-class="action-tap">
+          <view class="plan-action-icon is-export"></view>
+          <text>导出</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{empty}}" class="empty">
+    <view class="empty-title">暂无排片</view>
+  </view>
+
+  <view wx:if="{{!empty && smartPlanMeta && smartPlanMeta.labels.length}}" class="smart-summary">
+    <text class="smart-summary-source">{{smartPlanMeta.source === 'ai' ? 'AI已应用' : '本地规则'}}</text>
+    <text
+      wx:for="{{smartPlanMeta.labels}}"
+      wx:key="*this"
+      class="smart-summary-chip"
+    >{{item}}</text>
+  </view>
+
+  <view wx:if="{{plan.conflictPairs.length}}" class="conflict-panel">
+    <view class="panel-title">待处理冲突</view>
+    <view wx:for="{{plan.conflictPairs}}" wx:key="id" class="conflict-item">{{item.label}}</view>
+  </view>
+
+  <view wx:if="{{!empty}}" class="day-list">
+    <view wx:for="{{plan.days}}" wx:key="date" class="day-section">
+      <view class="day-title">{{item.dayLabel}}</view>
+      <view class="plan-timeline">
+        <view wx:for="{{item.items}}" wx:for-item="screening" wx:key="id" class="plan-item {{screening.conflict ? 'has-conflict' : ''}}">
+          <view class="timeline-rail">
+            <view class="time-stamp">
+              <text class="start mono">{{screening.start}}</text>
+              <text class="end mono">{{screening.end}}</text>
+            </view>
+            <view class="timeline-node {{screening.conflict ? 'has-conflict' : ''}}">
+              <view wx:if="{{screening.conflict}}" class="conflict-cross">
+                <view class="conflict-cross-line is-a"></view>
+                <view class="conflict-cross-line is-b"></view>
+              </view>
+            </view>
+          </view>
+
+          <view class="plan-card {{screening.conflict ? 'has-conflict' : ''}}">
+            <view class="plan-main">
+              <view class="screen-title">{{screening.cnTitle}}</view>
+              <view wx:if="{{screening.screenMeta}}" class="screen-meta">{{screening.screenMeta}}</view>
+              <view class="venue">{{screening.cinema}} · {{screening.hall}}</view>
+              <view class="ticket-row">
+                <text class="ticket">{{screening.ticketPlan}}</text>
+                <text wx:if="{{screening.price}}" class="price">¥{{screening.price}}</text>
+              </view>
+            </view>
+            <view
+              class="remove"
+              data-id="{{screening.id}}"
+              hover-class="action-tap"
+              hover-start-time="0"
+              hover-stay-time="80"
+              bindtap="removeScreening"
+            >
+              <view class="remove-symbol">
+                <view class="action-glyph is-cross">
+                  <view class="glyph-line is-a"></view>
+                  <view class="glyph-line is-b"></view>
+                </view>
+              </view>
+              <text class="remove-label">移除</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{importSheetOpen}}" class="import-mask" catchtap="closeImportSheet">
+    <view class="import-dialog" catchtap="noop">
+      <view class="import-head">
+        <view class="import-title">导入排片</view>
+        <view class="import-close" bindtap="closeImportSheet">×</view>
+      </view>
+      <textarea
+        class="import-input"
+        value="{{importText}}"
+        maxlength="-1"
+        fixed
+        placeholder="粘贴朋友发来的文字版排片，导入后会生成新方案"
+        bindinput="inputImportText"
+      ></textarea>
+      <view wx:if="{{importError}}" class="import-error">{{importError}}</view>
+      <view class="import-actions">
+        <view class="import-secondary" bindtap="closeImportSheet">取消</view>
+        <view class="import-primary {{importText ? '' : 'is-disabled'}}" bindtap="importPlanText">一键导入</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{posterSheetOpen}}" class="poster-mask" catchtap="closePosterSheet">
+    <view class="poster-sheet" catchtap="noop">
+      <view class="poster-grip"></view>
+      <view class="poster-sheet-title">导出长图</view>
+      <view class="poster-sheet-meta">{{exportSummary}}</view>
+
+      <view class="poster-field-title">颜色模板</view>
+      <view class="poster-theme-row">
+        <view
+          wx:for="{{posterThemes}}"
+          wx:key="key"
+          class="poster-theme {{posterTheme === item.key ? 'is-picked' : ''}}"
+          data-theme="{{item.key}}"
+          bindtap="selectPosterTheme"
+        >
+          <view class="poster-theme-swatch" style="background: {{item.swatch}};"></view>
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+
+      <view class="poster-option" bindtap="togglePosterCode">
+        <view>
+          <view class="poster-option-title">添加小程序码</view>
+          <view class="poster-option-note">右下角小尺寸显示</view>
+        </view>
+        <view class="poster-check {{posterIncludeCode ? 'is-on' : ''}}">
+          <view class="poster-check-dot"></view>
+        </view>
+      </view>
+
+      <view class="poster-actions">
+        <view class="poster-secondary" bindtap="closePosterSheet">取消</view>
+        <view class="poster-primary" bindtap="confirmPosterExport">生成长图</view>
+      </view>
+    </view>
+  </view>
+
+  <canvas
+    id="planPoster"
+    type="2d"
+    class="poster-canvas"
+    style="width: {{posterWidth}}px; height: {{posterHeight}}px;"
+  ></canvas>
+</view>

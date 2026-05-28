@@ -1,0 +1,44 @@
+{
+  "pages": [
+    "pages/schedule/index",
+    "pages/films/index",
+    "pages/plan/index",
+    "pages/about/index",
+    "pages/film/detail"
+  ],
+  "window": {
+    "navigationBarTitleText": "电影节排片",
+    "navigationBarBackgroundColor": "#FFFFFF",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#FFFFFF",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#717171",
+    "selectedColor": "#171917",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/films/index",
+        "text": "选电影",
+        "iconPath": "assets/tab/films.png",
+        "selectedIconPath": "assets/tab/films-active.png"
+      },
+      {
+        "pagePath": "pages/schedule/index",
+        "text": "挑场次",
+        "iconPath": "assets/tab/schedule.png",
+        "selectedIconPath": "assets/tab/schedule-active.png"
+      },
+      {
+        "pagePath": "pages/plan/index",
+        "text": "排片表",
+        "iconPath": "assets/tab/plan.png",
+        "selectedIconPath": "assets/tab/plan-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

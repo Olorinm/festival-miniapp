@@ -1,0 +1,57 @@
+.about-page {
+  min-height: 100vh;
+  padding: 42rpx 34rpx 80rpx;
+  background: #ffffff;
+}
+
+.about-hero {
+  padding-top: 16rpx;
+}
+
+.about-kicker {
+  color: #747a73;
+  font-size: 23rpx;
+  font-weight: 560;
+  line-height: 1.2;
+}
+
+.about-title {
+  margin-top: 8rpx;
+  color: #171917;
+  font-size: 44rpx;
+  font-weight: 760;
+  line-height: 1.08;
+}
+
+.about-subtitle {
+  max-width: 600rpx;
+  margin-top: 18rpx;
+  color: #626861;
+  font-size: 27rpx;
+  line-height: 1.5;
+}
+
+.about-section {
+  margin-top: 44rpx;
+  padding-top: 26rpx;
+  border-top: 1rpx solid #ebece8;
+}
+
+.section-title {
+  color: #171917;
+  font-size: 27rpx;
+  font-weight: 680;
+  line-height: 1.25;
+}
+
+.section-body {
+  margin-top: 12rpx;
+  color: #626861;
+  font-size: 25rpx;
+  line-height: 1.55;
+}
+
+.about-link {
+  color: #3f5b73;
+  font-weight: 620;
+}

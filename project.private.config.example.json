@@ -1,0 +1,8 @@
+{
+  "appid": "your-miniprogram-appid",
+  "projectname": "festival-miniapp",
+  "libVersion": "3.16.1",
+  "setting": {
+    "urlCheck": false
+  }
+}

@@ -1,0 +1,147 @@
+<view class="app-custom-nav" style="height: {{navTotalHeight}}px;">
+  <view class="app-nav-row" style="top: {{navTop}}px; height: {{navHeight}}px; padding-right: {{navRight}}px;">
+    <navigator class="app-about-entry" url="/pages/about/index" hover-class="app-about-tap">
+      <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
+      <text>关于</text>
+    </navigator>
+    <view class="app-nav-title is-with-context">
+      <text class="app-nav-main">选电影</text>
+      <text class="app-nav-context">{{festivalName}}</text>
+    </view>
+  </view>
+</view>
+
+<view class="page films-page" style="padding-top: {{contentTop}}px;">
+  <view class="films-top">
+    <view class="films-tool-row">
+      <view class="search-box films-search">
+        <text class="search-icon">⌕</text>
+        <input class="search-input" value="{{query}}" bindinput="onSearchInput" placeholder="搜片名、导演、单元" confirm-type="search" />
+      </view>
+
+      <view class="smart-entry" bindtap="openSmartPlan" hover-class="smart-entry-tap">
+        <view class="smart-icon">
+          <view class="smart-spark">
+            <view class="smart-spark-point is-top"></view>
+            <view class="smart-spark-point is-right"></view>
+            <view class="smart-spark-point is-bottom"></view>
+            <view class="smart-spark-point is-left"></view>
+            <view class="smart-spark-core"></view>
+          </view>
+        </view>
+        <text class="smart-entry-label">智能排片</text>
+        <text class="smart-arrow">›</text>
+      </view>
+    </view>
+  </view>
+
+  <scroll-view class="film-filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+    <view class="film-filter-row">
+      <view class="interest-segment">
+        <view
+          wx:for="{{filters}}"
+          wx:key="key"
+          wx:if="{{item.type !== 'sort'}}"
+          class="interest-option {{activeInterest === item.key ? 'is-active' : ''}}"
+          data-key="{{item.key}}"
+          data-type="{{item.type}}"
+          bindtap="handleFilterTap"
+        >
+          <text class="pill-label">{{item.label}}</text>
+        </view>
+      </view>
+
+      <view
+        wx:for="{{filters}}"
+        wx:key="key"
+        wx:if="{{item.type === 'sort'}}"
+        class="film-tool-chip {{sortOpen ? 'is-active' : ''}}"
+        data-key="{{item.key}}"
+        data-type="{{item.type}}"
+        bindtap="handleFilterTap"
+      >
+        <text class="film-tool-label">{{sortFilterLabel}}</text>
+        <text class="filter-triangle">▼</text>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{sortOpen}}" class="sort-panel">
+    <view class="sort-grid">
+      <view
+        wx:for="{{sortOptions}}"
+        wx:key="key"
+        class="sort-option {{activeSort === item.key ? 'is-picked' : ''}}"
+        data-sort="{{item.key}}"
+        bindtap="selectSort"
+      >
+        <text>{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{films.length === 0}}" class="empty">
+    <view class="empty-title">无结果</view>
+  </view>
+
+  <view class="film-list">
+    <view
+      wx:for="{{filmGroups}}"
+      wx:for-item="group"
+      wx:for-index="groupIndex"
+      wx:key="renderKey"
+      class="film-group"
+    >
+      <view wx:if="{{activeSort !== 'default'}}" class="group-header" data-key="{{group.key}}" bindtap="toggleGroup">
+        <view class="group-left">
+          <text class="group-caret-symbol {{group.expanded ? 'is-open' : ''}}">{{group.expanded ? '⌄' : '›'}}</text>
+          <view class="group-label">{{group.headerText || groupHeaderFallback}}</view>
+        </view>
+        <view class="group-side">
+          <text class="group-count">{{group.count}} 部</text>
+        </view>
+      </view>
+
+      <view wx:if="{{group.expanded}}" class="group-list">
+        <view
+          wx:for="{{group.items}}"
+          wx:for-item="item"
+          wx:for-index="filmIndex"
+          wx:key="id"
+          class="film-card mark-{{item.interest.tone}}"
+          data-id="{{item.id}}"
+          bindtap="openFilm"
+        >
+          <view class="film-main">
+            <view class="film-info">
+              <view class="title-row">
+                <view class="film-title">{{item.cnTitle}}</view>
+              </view>
+              <view wx:if="{{item.enTitle}}" class="film-en">{{item.enTitle}}</view>
+              <view class="film-meta">{{item.metaText}}</view>
+            </view>
+            <view class="mark-rail" catchtap="noop">
+              <view
+                wx:for="{{markOptions}}"
+                wx:for-item="option"
+                wx:key="key"
+                class="rail-mark {{item.mark === option.key ? 'is-picked' : ''}} tone-{{option.tone}}"
+                data-film-id="{{item.id}}"
+                data-group-index="{{groupIndex}}"
+                data-film-index="{{filmIndex}}"
+                data-mark="{{option.key}}"
+                data-current-mark="{{item.mark}}"
+                hover-class="rail-mark-tap"
+                hover-start-time="0"
+                hover-stay-time="70"
+                catchtap="markFilm"
+              >
+                {{option.shortLabel}}
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,163 @@
+<svg width="1800" height="1320" viewBox="0 0 1800 1320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1800" height="1320" fill="#efede7"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    .label { fill:#817d73; font-size:20px; font-weight:650; letter-spacing:.08em; }
+    .small { font-size:18px; font-weight:600; }
+    .tiny { font-size:15px; font-weight:560; }
+    .time { font-size:25px; font-weight:760; font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif; }
+    .end { font-size:16px; font-weight:620; }
+    .title { font-size:25px; font-weight:760; }
+    .venue { font-size:17px; font-weight:560; }
+  </style>
+
+  <text x="70" y="45" class="label">A  白底网格 / 信息密度高</text>
+  <text x="660" y="45" class="label">B  夜场时间线 / 更电影节</text>
+  <text x="1250" y="45" class="label">C  大日期 / 更像个人行程</text>
+
+  <!-- A -->
+  <g transform="translate(70 80)">
+    <rect width="500" height="1120" rx="8" fill="#fbfaf6"/>
+    <rect x="0" y="0" width="500" height="1120" rx="8" stroke="#ded9cd"/>
+    <text x="34" y="58" fill="#171717" class="small">赶场愉快</text>
+    <text x="34" y="92" fill="#8d877c" class="tiny">BJIFF 2026</text>
+    <text x="34" y="146" fill="#171717" font-size="44" font-weight="800">我的排片</text>
+    <text x="338" y="146" fill="#8d877c" font-size="18" font-weight="650">6 场 · 10h34m</text>
+    <text x="320" y="234" fill="#eee8dc" font-size="112" font-weight="820">04/16</text>
+    <line x1="34" y1="202" x2="466" y2="202" stroke="#ded9cd"/>
+    <text x="34" y="244" fill="#6f1714" font-size="22" font-weight="800">4/16 周四</text>
+    <line x1="34" y1="264" x2="466" y2="264" stroke="#ded9cd"/>
+
+    <g transform="translate(34 294)">
+      <text x="0" y="0" fill="#171717" class="time">10:00</text><text x="4" y="26" fill="#9a9489" class="end">12:04</text>
+      <text x="100" y="0" fill="#171717" class="title">怡同学少年</text><text x="100" y="30" fill="#777167" class="venue">英皇电影城</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+    <g transform="translate(34 386)">
+      <text x="0" y="0" fill="#171717" class="time">11:00</text><text x="4" y="26" fill="#9a9489" class="end">12:38</text>
+      <text x="100" y="0" fill="#171717" class="title">机器人总动员</text><text x="100" y="30" fill="#777167" class="venue">中国电影资料馆</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+    <g transform="translate(34 478)">
+      <text x="0" y="0" fill="#171717" class="time">13:30</text><text x="4" y="26" fill="#9a9489" class="end">14:54</text>
+      <text x="100" y="0" fill="#171717" class="title">心火</text><text x="100" y="30" fill="#777167" class="venue">卢米埃IMAX影城</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+
+    <text x="34" y="610" fill="#6f1714" font-size="22" font-weight="800">4/19 周日</text>
+    <line x1="34" y1="630" x2="466" y2="630" stroke="#ded9cd"/>
+    <g transform="translate(34 660)">
+      <text x="0" y="0" fill="#171717" class="time">11:00</text><text x="4" y="26" fill="#9a9489" class="end">12:38</text>
+      <text x="100" y="0" fill="#171717" class="title">蓝白红三部曲之蓝 4K</text><text x="100" y="30" fill="#777167" class="venue">天幕新彩云国际影城</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+    <g transform="translate(34 752)">
+      <text x="0" y="0" fill="#171717" class="time">15:30</text><text x="4" y="26" fill="#9a9489" class="end">17:06</text>
+      <text x="100" y="0" fill="#171717" class="title">当哈利遇上莎莉 4K</text><text x="100" y="30" fill="#777167" class="venue">卢米埃IMAX影城</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+    <g transform="translate(34 844)">
+      <text x="0" y="0" fill="#171717" class="time">21:00</text><text x="4" y="26" fill="#9a9489" class="end">22:36</text>
+      <text x="100" y="0" fill="#171717" class="title">法式火锅</text><text x="100" y="30" fill="#777167" class="venue">北京青年宫电影城</text>
+      <line x1="0" y1="62" x2="432" y2="62" stroke="#ece7dc"/>
+    </g>
+    <text x="214" y="1066" fill="#9a9489" text-anchor="end" class="tiny">搜索「赶场愉快小程序」</text>
+    <text x="214" y="1090" fill="#9a9489" text-anchor="end" class="tiny">一键导入排片表</text>
+    <rect x="232" y="1038" width="52" height="52" fill="#eee8dc"/>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(660 80)">
+    <rect width="500" height="1120" rx="8" fill="#181815"/>
+    <rect x="0" y="0" width="500" height="1120" rx="8" stroke="#33322c"/>
+    <text x="34" y="58" fill="#f0e5cc" class="small">赶场愉快</text>
+    <text x="34" y="96" fill="#9f9a8e" class="tiny">BJIFF 2026</text>
+    <text x="34" y="150" fill="#f0e5cc" font-size="40" font-weight="800">我的排片</text>
+    <text x="34" y="184" fill="#a98f54" font-size="18" font-weight="700">6 场 · 10h34m</text>
+    <rect x="34" y="238" width="432" height="52" fill="#24231e"/>
+    <text x="54" y="271" fill="#d6b767" font-size="22" font-weight="800">4/16 周四</text>
+    <line x1="132" y1="322" x2="132" y2="560" stroke="#b99145" stroke-width="2"/>
+
+    <g transform="translate(34 336)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">10:00</text><text x="4" y="27" fill="#77746c" class="end">12:04</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">怡同学少年</text><text x="126" y="30" fill="#938d80" class="venue">英皇电影城</text>
+    </g>
+    <g transform="translate(34 426)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">11:00</text><text x="4" y="27" fill="#77746c" class="end">12:38</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">机器人总动员</text><text x="126" y="30" fill="#938d80" class="venue">中国电影资料馆</text>
+    </g>
+    <g transform="translate(34 516)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">13:30</text><text x="4" y="27" fill="#77746c" class="end">14:54</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">心火</text><text x="126" y="30" fill="#938d80" class="venue">卢米埃IMAX影城</text>
+    </g>
+
+    <rect x="34" y="626" width="432" height="52" fill="#24231e"/>
+    <text x="54" y="659" fill="#d6b767" font-size="22" font-weight="800">4/19 周日</text>
+    <line x1="132" y1="710" x2="132" y2="948" stroke="#b99145" stroke-width="2"/>
+    <g transform="translate(34 724)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">11:00</text><text x="4" y="27" fill="#77746c" class="end">12:38</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">蓝白红三部曲之蓝 4K</text><text x="126" y="30" fill="#938d80" class="venue">天幕新彩云国际影城</text>
+    </g>
+    <g transform="translate(34 814)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">15:30</text><text x="4" y="27" fill="#77746c" class="end">17:06</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">当哈利遇上莎莉 4K</text><text x="126" y="30" fill="#938d80" class="venue">卢米埃IMAX影城</text>
+    </g>
+    <g transform="translate(34 904)">
+      <text x="0" y="0" fill="#f0e5cc" class="time">21:00</text><text x="4" y="27" fill="#77746c" class="end">22:36</text>
+      <circle cx="98" cy="-7" r="5" fill="#b99145"/>
+      <text x="126" y="0" fill="#f0e5cc" class="title">法式火锅</text><text x="126" y="30" fill="#938d80" class="venue">北京青年宫电影城</text>
+    </g>
+    <text x="466" y="1072" fill="#77746c" text-anchor="end" class="tiny">搜索「赶场愉快小程序」一键导入排片表</text>
+  </g>
+
+  <!-- C -->
+  <g transform="translate(1250 80)">
+    <rect width="500" height="1120" rx="8" fill="#f7f2e8"/>
+    <rect x="0" y="0" width="500" height="1120" rx="8" stroke="#ddd3c3"/>
+    <text x="34" y="56" fill="#141412" class="small">赶场愉快</text>
+    <text x="34" y="92" fill="#7d766c" class="tiny">BJIFF 2026 · 6 场 · 10h34m</text>
+    <text x="34" y="148" fill="#141412" font-size="38" font-weight="820">我的排片</text>
+    <text x="34" y="278" fill="#e6dccd" font-size="130" font-weight="850">16</text>
+    <text x="150" y="238" fill="#8a2f24" font-size="22" font-weight="820">4/16 周四</text>
+    <line x1="150" y1="258" x2="466" y2="258" stroke="#d9cebd"/>
+    <g transform="translate(150 306)">
+      <text x="0" y="0" fill="#141412" class="time">10:00</text><text x="5" y="25" fill="#8d867a" class="end">12:04</text>
+      <text x="95" y="0" fill="#141412" class="title">怡同学少年</text><text x="95" y="30" fill="#756d62" class="venue">英皇电影城</text>
+      <line x1="0" y1="58" x2="316" y2="58" stroke="#e5dbcc"/>
+    </g>
+    <g transform="translate(150 394)">
+      <text x="0" y="0" fill="#141412" class="time">11:00</text><text x="5" y="25" fill="#8d867a" class="end">12:38</text>
+      <text x="95" y="0" fill="#141412" class="title">机器人总动员</text><text x="95" y="30" fill="#756d62" class="venue">中国电影资料馆</text>
+      <line x1="0" y1="58" x2="316" y2="58" stroke="#e5dbcc"/>
+    </g>
+    <g transform="translate(150 482)">
+      <text x="0" y="0" fill="#141412" class="time">13:30</text><text x="5" y="25" fill="#8d867a" class="end">14:54</text>
+      <text x="95" y="0" fill="#141412" class="title">心火</text><text x="95" y="30" fill="#756d62" class="venue">卢米埃IMAX影城</text>
+      <line x1="0" y1="58" x2="316" y2="58" stroke="#e5dbcc"/>
+    </g>
+
+    <text x="34" y="710" fill="#e6dccd" font-size="130" font-weight="850">19</text>
+    <text x="150" y="670" fill="#8a2f24" font-size="22" font-weight="820">4/19 周日</text>
+    <line x1="150" y1="690" x2="466" y2="690" stroke="#d9cebd"/>
+    <g transform="translate(150 738)">
+      <text x="0" y="0" fill="#141412" class="time">11:00</text><text x="5" y="25" fill="#8d867a" class="end">12:38</text>
+      <text x="95" y="0" fill="#141412" class="title">蓝白红之蓝 4K</text><text x="95" y="30" fill="#756d62" class="venue">天幕新彩云国际影城</text>
+      <line x1="0" y1="58" x2="316" y2="58" stroke="#e5dbcc"/>
+    </g>
+    <g transform="translate(150 826)">
+      <text x="0" y="0" fill="#141412" class="time">15:30</text><text x="5" y="25" fill="#8d867a" class="end">17:06</text>
+      <text x="95" y="0" fill="#141412" class="title">当哈利遇上莎莉 4K</text><text x="95" y="30" fill="#756d62" class="venue">卢米埃IMAX影城</text>
+      <line x1="0" y1="58" x2="316" y2="58" stroke="#e5dbcc"/>
+    </g>
+    <g transform="translate(150 914)">
+      <text x="0" y="0" fill="#141412" class="time">21:00</text><text x="5" y="25" fill="#8d867a" class="end">22:36</text>
+      <text x="95" y="0" fill="#141412" class="title">法式火锅</text><text x="95" y="30" fill="#756d62" class="venue">北京青年宫电影城</text>
+    </g>
+    <text x="466" y="1074" fill="#9a9185" text-anchor="end" class="tiny">搜索「赶场愉快小程序」一键导入排片表</text>
+  </g>
+</svg>

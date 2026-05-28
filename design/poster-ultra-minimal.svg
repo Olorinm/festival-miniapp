@@ -1,0 +1,67 @@
+<svg width="750" height="1500" viewBox="0 0 750 1500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="750" height="1500" fill="#FDFDFB"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    .brand { fill:#1F201E; font-size:20px; font-weight:560; letter-spacing:.02em; }
+    .headline { fill:#1F201E; font-size:36px; font-weight:520; letter-spacing:.01em; }
+    .summary { fill:#8B8D89; font-size:18px; font-weight:360; }
+    .ghost { fill:#E8E8E6; font-size:230px; font-weight:280; font-family:"Helvetica Neue", Arial, sans-serif; }
+    .time { fill:#1F201E; font-size:27px; font-weight:650; font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif; }
+    .end { fill:#989A96; font-size:17px; font-weight:380; font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif; }
+    .film { fill:#1F201E; font-size:27px; font-weight:560; }
+    .venue { fill:#71736F; font-size:20px; font-weight:320; }
+    .note { fill:#A2A39F; font-size:16px; font-weight:360; }
+  </style>
+
+  <text x="74" y="82" class="brand">赶场愉快</text>
+  <text x="74" y="150" class="headline">我的 2026 上影节</text>
+  <text x="74" y="188" class="summary">6 场 · 10h34m</text>
+
+  <g transform="translate(0 250)">
+    <text x="272" y="212" class="ghost">13</text>
+    <g transform="translate(74 158)">
+      <text x="0" y="0" class="time">13:00</text>
+      <text x="7" y="34" class="end">14:58</text>
+      <text x="142" y="0" class="film">甜蜜蜜</text>
+      <text x="142" y="42" class="venue">艺海剧院</text>
+    </g>
+  </g>
+
+  <g transform="translate(0 470)">
+    <text x="272" y="212" class="ghost">14</text>
+    <g transform="translate(74 158)">
+      <text x="0" y="0" class="time">20:40</text>
+      <text x="7" y="34" class="end">22:41</text>
+      <text x="142" y="0" class="film">蓝丝绒 4K</text>
+      <text x="142" y="42" class="venue">上海百丽宫影城</text>
+    </g>
+  </g>
+
+  <g transform="translate(0 690)">
+    <text x="272" y="212" class="ghost">15</text>
+    <g transform="translate(74 144)">
+      <text x="0" y="0" class="time">09:00</text>
+      <text x="7" y="34" class="end">12:27</text>
+      <text x="142" y="0" class="film">七武士 4K</text>
+      <text x="142" y="42" class="venue">上海大光明电影院</text>
+    </g>
+    <g transform="translate(74 260)">
+      <text x="0" y="0" class="time">20:40</text>
+      <text x="7" y="34" class="end">22:38</text>
+      <text x="142" y="0" class="film">傲慢与偏见 1940</text>
+      <text x="142" y="42" class="venue">上海百丽宫影城</text>
+    </g>
+  </g>
+
+  <g transform="translate(0 1040)">
+    <text x="272" y="212" class="ghost">16</text>
+    <g transform="translate(74 158)">
+      <text x="0" y="0" class="time">20:40</text>
+      <text x="7" y="34" class="end">22:27</text>
+      <text x="142" y="0" class="film">金玉满堂 4K</text>
+      <text x="142" y="42" class="venue">上海百丽宫影城</text>
+    </g>
+  </g>
+
+  <text x="676" y="1434" text-anchor="end" class="note">搜索「赶场愉快小程序」一键导入排片表</text>
+</svg>

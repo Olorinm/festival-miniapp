@@ -1,0 +1,70 @@
+<svg width="1200" height="980" viewBox="0 0 1200 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="980" fill="#EFEDE8"/>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+    .label { fill:#817D75; font-size:20px; font-weight:650; letter-spacing:.04em; }
+    .brand { fill:#20211F; font-size:20px; font-weight:650; }
+    .meta { fill:#8D8F8B; font-size:17px; font-weight:480; }
+    .headline { fill:#20211F; font-size:30px; font-weight:650; }
+    .date { fill:#20211F; font-size:24px; font-weight:650; }
+    .ghost { fill:#E7E7E5; font-size:220px; font-weight:300; font-family:"Helvetica Neue", Arial, sans-serif; }
+    .time { fill:#20211F; font-size:26px; font-weight:700; font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif; }
+    .end { fill:#92938F; font-size:17px; font-weight:450; font-family:"DIN Alternate","Avenir Next Condensed","Helvetica Neue",Arial,sans-serif; }
+    .film { fill:#20211F; font-size:27px; font-weight:650; }
+    .venue { fill:#6E706C; font-size:20px; font-weight:360; }
+  </style>
+
+  <text x="70" y="48" class="label">A  完整日期 / 去掉大数字</text>
+  <text x="650" y="48" class="label">B  大数字 / 日期不重复</text>
+
+  <!-- A -->
+  <g transform="translate(70 80)">
+    <rect width="500" height="820" rx="8" fill="#FCFCFA"/>
+    <rect width="500" height="820" rx="8" stroke="#E0E1DE"/>
+    <text x="52" y="62" class="brand">赶场愉快</text>
+    <text x="52" y="96" class="meta">BJIFF 2026 · 6 场 · 10h34m</text>
+    <text x="52" y="148" class="headline">我的排片</text>
+    <line x1="52" y1="196" x2="448" y2="196" stroke="#E0E1DE"/>
+    <text x="52" y="250" class="date">4/16 周四</text>
+    <line x1="52" y1="280" x2="448" y2="280" stroke="#E0E1DE"/>
+
+    <g transform="translate(52 340)">
+      <text x="0" y="0" class="time">10:00</text><text x="7" y="34" class="end">12:04</text>
+      <text x="126" y="0" class="film">怡同学少年</text><text x="126" y="42" class="venue">英皇电影城</text>
+    </g>
+    <g transform="translate(52 462)">
+      <text x="0" y="0" class="time">11:00</text><text x="7" y="34" class="end">12:38</text>
+      <text x="126" y="0" class="film">机器人总动员</text><text x="126" y="42" class="venue">中国电影资料馆</text>
+    </g>
+    <g transform="translate(52 584)">
+      <text x="0" y="0" class="time">13:30</text><text x="7" y="34" class="end">14:54</text>
+      <text x="126" y="0" class="film">心火</text><text x="126" y="42" class="venue">卢米埃IMAX影城</text>
+    </g>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(650 80)">
+    <rect width="500" height="820" rx="8" fill="#FCFCFA"/>
+    <rect width="500" height="820" rx="8" stroke="#E0E1DE"/>
+    <text x="52" y="62" class="brand">赶场愉快</text>
+    <text x="52" y="96" class="meta">BJIFF 2026 · 6 场 · 10h34m</text>
+    <text x="52" y="148" class="headline">我的排片</text>
+    <line x1="52" y1="196" x2="448" y2="196" stroke="#E0E1DE"/>
+    <text x="218" y="372" class="ghost">16</text>
+    <text x="52" y="250" class="date">4月 · 周四</text>
+    <line x1="52" y1="280" x2="448" y2="280" stroke="#E0E1DE"/>
+
+    <g transform="translate(52 340)">
+      <text x="0" y="0" class="time">10:00</text><text x="7" y="34" class="end">12:04</text>
+      <text x="126" y="0" class="film">怡同学少年</text><text x="126" y="42" class="venue">英皇电影城</text>
+    </g>
+    <g transform="translate(52 462)">
+      <text x="0" y="0" class="time">11:00</text><text x="7" y="34" class="end">12:38</text>
+      <text x="126" y="0" class="film">机器人总动员</text><text x="126" y="42" class="venue">中国电影资料馆</text>
+    </g>
+    <g transform="translate(52 584)">
+      <text x="0" y="0" class="time">13:30</text><text x="7" y="34" class="end">14:54</text>
+      <text x="126" y="0" class="film">心火</text><text x="126" y="42" class="venue">卢米埃IMAX影城</text>
+    </g>
+  </g>
+</svg>
