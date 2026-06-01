@@ -13,31 +13,51 @@
 
 <view class="page plan-page" style="padding-top: {{contentTop}}px;">
   <view class="plan-top">
-    <scroll-view class="scheme-scroll" scroll-x enhanced show-scrollbar="{{false}}">
-      <view class="scheme-row">
-        <view
-          wx:for="{{planSchemes}}"
-          wx:key="id"
-          class="scheme-card {{item.active ? 'is-active' : ''}}"
-          data-id="{{item.id}}"
-          data-name="{{item.name}}"
-          bindtap="selectPlanScheme"
-          bindlongpress="renamePlanScheme"
-        >
-          <text class="scheme-name">{{item.name}}</text>
+    <view class="plan-tool-row">
+      <scroll-view class="scheme-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="scheme-row">
+          <view
+            wx:for="{{planSchemes}}"
+            wx:key="id"
+            class="scheme-card {{item.active ? 'is-active' : ''}}"
+            data-id="{{item.id}}"
+            data-name="{{item.name}}"
+            bindtap="selectPlanScheme"
+            bindlongpress="renamePlanScheme"
+          >
+            <text class="scheme-name">{{item.name}}</text>
+          </view>
+          <view class="scheme-card is-new" bindtap="createBlankPlanScheme">
+            <text class="scheme-plus">＋</text>
+            <text class="scheme-meta">新方案</text>
+          </view>
         </view>
-        <view class="scheme-card is-new" bindtap="createBlankPlanScheme">
-          <text class="scheme-plus">＋</text>
-          <text class="scheme-meta">新方案</text>
+      </scroll-view>
+
+      <view class="smart-entry" bindtap="openSmartPlan">
+        <view class="smart-icon">
+          <view class="smart-spark">
+            <view class="smart-spark-point is-top"></view>
+            <view class="smart-spark-point is-right"></view>
+            <view class="smart-spark-point is-bottom"></view>
+            <view class="smart-spark-point is-left"></view>
+            <view class="smart-spark-core"></view>
+          </view>
         </view>
+        <text class="smart-entry-label">智能排片</text>
+        <text class="smart-arrow">›</text>
       </view>
-    </scroll-view>
+    </view>
 
     <view class="current-plan-bar">
-      <view class="current-plan-copy">
+      <view class="current-plan-lead">
         <text class="current-plan-summary">{{currentSchemeSummary}}</text>
       </view>
       <view class="current-plan-actions">
+        <view class="plan-tool-button" bindtap="deletePlanScheme" hover-class="action-tap">
+          <view class="plan-action-icon is-clear"></view>
+          <text>删除</text>
+        </view>
         <view class="plan-tool-button" bindtap="openImportSheet" hover-class="action-tap">
           <view class="plan-action-icon is-import"></view>
           <text>导入</text>
@@ -54,13 +74,8 @@
     <view class="empty-title">暂无排片</view>
   </view>
 
-  <view wx:if="{{!empty && smartPlanMeta && smartPlanMeta.labels.length}}" class="smart-summary">
-    <text class="smart-summary-source">{{smartPlanMeta.source === 'ai' ? 'AI已应用' : '本地规则'}}</text>
-    <text
-      wx:for="{{smartPlanMeta.labels}}"
-      wx:key="*this"
-      class="smart-summary-chip"
-    >{{item}}</text>
+  <view wx:if="{{!empty && smartPlanMeta && smartPlanMeta.instruction}}" class="smart-summary">
+    <text class="smart-summary-text">{{smartPlanMeta.instruction}}</text>
   </view>
 
   <view wx:if="{{plan.conflictPairs.length}}" class="conflict-panel">
@@ -87,15 +102,18 @@
           </view>
 
           <view class="plan-card {{screening.conflict ? 'has-conflict' : ''}}">
-            <view class="plan-main">
-              <view class="screen-title">{{screening.cnTitle}}</view>
-              <view wx:if="{{screening.screenMeta}}" class="screen-meta">{{screening.screenMeta}}</view>
-              <view class="venue">{{screening.cinema}} · {{screening.hall}}</view>
-              <view class="ticket-row">
-                <text class="ticket">{{screening.ticketPlan}}</text>
-                <text wx:if="{{screening.price}}" class="price">¥{{screening.price}}</text>
+            <view wx:if="{{screening.isMock}}" class="mock-stamp">{{screening.mockLabel ? screening.mockLabel : '测试场次'}}</view>
+            <navigator class="plan-main" url="/pages/film/detail?id={{screening.filmId}}">
+              <view class="plan-info">
+                <view class="screen-title">{{screening.cnTitle}}</view>
+                <view class="venue">{{screening.cinema}} · {{screening.hall}}</view>
+                <view class="ticket-row">
+                  <text wx:if="{{screening.ticketPlan}}" class="ticket">{{screening.ticketPlan}}</text>
+                  <text wx:if="{{screening.price}}" class="price">¥{{screening.price}}</text>
+                  <text wx:if="{{screening.popularityText}}" class="popularity">{{screening.popularityText}}</text>
+                </view>
               </view>
-            </view>
+            </navigator>
             <view
               class="remove"
               data-id="{{screening.id}}"
@@ -160,7 +178,7 @@
         </view>
       </view>
 
-      <view class="poster-option" bindtap="togglePosterCode">
+      <view wx:if="{{posterCodeAvailable}}" class="poster-option" bindtap="togglePosterCode">
         <view>
           <view class="poster-option-title">添加小程序码</view>
           <view class="poster-option-note">右下角小尺寸显示</view>
@@ -183,4 +201,6 @@
     class="poster-canvas"
     style="width: {{posterWidth}}px; height: {{posterHeight}}px;"
   ></canvas>
+
+  <smart-plan id="smartPlan" bindplanned="onSmartPlanned"></smart-plan>
 </view>

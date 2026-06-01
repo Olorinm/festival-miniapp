@@ -32,7 +32,16 @@
   },
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "assets/posters"
+      },
+      {
+        "type": "folder",
+        "value": "miniprogram/assets/posters"
+      }
+    ],
     "include": []
   },
   "editorSetting": {},

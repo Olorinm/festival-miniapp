@@ -19,7 +19,7 @@
         <input class="search-input" value="{{query}}" bindinput="onSearchInput" placeholder="搜片名、导演、单元" confirm-type="search" />
       </view>
 
-      <view class="smart-entry" bindtap="openSmartPlan" hover-class="smart-entry-tap">
+      <view class="smart-entry" bindtap="openSmartPlan">
         <view class="smart-icon">
           <view class="smart-spark">
             <view class="smart-spark-point is-top"></view>
@@ -63,6 +63,15 @@
         <text class="film-tool-label">{{sortFilterLabel}}</text>
         <text class="filter-triangle">▼</text>
       </view>
+
+      <view class="film-tool-chip {{filterPanelOpen ? 'is-active' : ''}}" bindtap="toggleFilterPanel">
+        <text class="film-tool-label">筛选</text>
+        <text wx:if="{{filterActiveCount}}" class="filter-count">· {{filterActiveCount}}</text>
+      </view>
+
+      <view class="film-tool-chip {{fieldPanelOpen ? 'is-active' : ''}}" bindtap="toggleFieldPanel">
+        <text class="film-tool-label">字段</text>
+      </view>
     </view>
   </scroll-view>
 
@@ -80,6 +89,82 @@
     </view>
   </view>
 
+  <view wx:if="{{filterPanelOpen}}" class="filter-panel">
+    <view class="filter-group">
+      <view class="filter-group-head"><text class="filter-group-label">单元</text></view>
+      <scroll-view class="filter-group-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="filter-group-row">
+          <view
+            wx:for="{{sectionOptions}}"
+            wx:key="key"
+            class="filter-option {{item.picked ? 'is-picked' : ''}}"
+            data-type="section"
+            data-value="{{item.key}}"
+            bindtap="selectFilterOption"
+          >
+            <text class="filter-option-label">{{item.label}}</text>
+            <text class="filter-option-count">{{item.count}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view class="filter-group">
+      <view class="filter-group-head"><text class="filter-group-label">导演</text></view>
+      <scroll-view class="filter-group-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="filter-group-row">
+          <view
+            wx:for="{{directorFilterOptions}}"
+            wx:key="key"
+            class="filter-option {{item.picked ? 'is-picked' : ''}}"
+            data-type="director"
+            data-value="{{item.key}}"
+            bindtap="selectFilterOption"
+          >
+            <text class="filter-option-label">{{item.label}}</text>
+            <text class="filter-option-count">{{item.count}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view class="filter-group">
+      <view class="filter-group-head">
+        <text class="filter-group-label">豆瓣评分</text>
+        <text class="filter-slider-value">{{doubanMin > 0 ? doubanMin + ' 分以上' : '不限'}}</text>
+      </view>
+      <slider min="0" max="9.5" step="0.5" value="{{doubanMin}}" block-size="20" activeColor="#171917" bindchanging="onDoubanChanging" bindchange="onDoubanChange" />
+    </view>
+
+    <view class="filter-group">
+      <view class="filter-group-head">
+        <text class="filter-group-label">IMDb 评分</text>
+        <text class="filter-slider-value">{{imdbMin > 0 ? imdbMin + ' 分以上' : '不限'}}</text>
+      </view>
+      <slider min="0" max="9.5" step="0.5" value="{{imdbMin}}" block-size="20" activeColor="#171917" bindchanging="onImdbChanging" bindchange="onImdbChange" />
+    </view>
+
+    <view wx:if="{{filterActiveCount}}" class="filter-panel-reset" bindtap="resetFilters">重置筛选</view>
+  </view>
+
+  <view wx:if="{{fieldPanelOpen}}" class="field-panel">
+    <view
+      wx:for="{{fieldOptions}}"
+      wx:key="key"
+      class="field-row"
+      data-key="{{item.key}}"
+      bindtap="toggleField"
+    >
+      <view class="field-row-text">
+        <view class="field-row-label">{{item.label}}</view>
+        <view wx:if="{{item.desc}}" class="field-row-desc">{{item.desc}}</view>
+      </view>
+      <view class="field-switch {{fieldConfig[item.key] ? 'is-on' : ''}}">
+        <view class="field-switch-dot"></view>
+      </view>
+    </view>
+  </view>
+
   <view wx:if="{{films.length === 0}}" class="empty">
     <view class="empty-title">无结果</view>
   </view>
@@ -89,7 +174,7 @@
       wx:for="{{filmGroups}}"
       wx:for-item="group"
       wx:for-index="groupIndex"
-      wx:key="renderKey"
+      wx:key="key"
       class="film-group"
     >
       <view wx:if="{{activeSort !== 'default'}}" class="group-header" data-key="{{group.key}}" bindtap="toggleGroup">
@@ -113,30 +198,38 @@
           bindtap="openFilm"
         >
           <view class="film-main">
+            <view class="film-poster {{item.hasPoster ? '' : 'is-placeholder'}}">
+              <image wx:if="{{item.hasPoster}}" class="film-poster-image" src="{{item.posterSrc}}" mode="aspectFill" lazy-load="true" />
+              <view wx:else class="poster-placeholder">暂无海报</view>
+            </view>
             <view class="film-info">
               <view class="title-row">
                 <view class="film-title">{{item.cnTitle}}</view>
               </view>
               <view wx:if="{{item.enTitle}}" class="film-en">{{item.enTitle}}</view>
-              <view class="film-meta">{{item.metaText}}</view>
+              <view wx:if="{{fieldConfig.info && item.metaText}}" class="film-meta">{{item.metaText}}</view>
+              <view wx:if="{{(fieldConfig.info && item.sectionLabel) || (fieldConfig.rating && item.ratingSummary)}}" class="film-fact-row">
+                <text wx:if="{{fieldConfig.info && item.sectionLabel}}" class="film-section">{{item.sectionLabel}}</text>
+                <text wx:if="{{fieldConfig.rating && item.ratingSummary}}" class="film-rating">{{item.ratingSummary}}</text>
+              </view>
             </view>
-            <view class="mark-rail" catchtap="noop">
+            <view class="star-rail" catchtap="noop">
               <view
-                wx:for="{{markOptions}}"
-                wx:for-item="option"
-                wx:key="key"
-                class="rail-mark {{item.mark === option.key ? 'is-picked' : ''}} tone-{{option.tone}}"
+                wx:for="{{starSlots}}"
+                wx:for-item="star"
+                wx:key="n"
+                class="star-hit"
                 data-film-id="{{item.id}}"
                 data-group-index="{{groupIndex}}"
                 data-film-index="{{filmIndex}}"
-                data-mark="{{option.key}}"
+                data-mark="{{star.mark}}"
                 data-current-mark="{{item.mark}}"
-                hover-class="rail-mark-tap"
+                hover-class="star-tap"
                 hover-start-time="0"
                 hover-stay-time="70"
                 catchtap="markFilm"
               >
-                {{option.shortLabel}}
+                <view class="star {{item.interest.rank >= star.n ? 'is-on' : ''}}"></view>
               </view>
             </view>
           </view>
@@ -144,4 +237,6 @@
       </view>
     </view>
   </view>
+
+  <smart-plan id="smartPlan"></smart-plan>
 </view>

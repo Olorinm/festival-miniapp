@@ -5,6 +5,7 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database()
 const CONFIG_COLLECTION = process.env.FESTIVAL_CONFIG_COLLECTION || 'festival_config'
 const CONFIG_DOC_ID = process.env.FESTIVAL_CONFIG_DOC_ID || 'current'
+const bundledPayload = require('./festival-data.json')
 
 function isValidFestivalData(data) {
   return !!(
@@ -16,9 +17,7 @@ function isValidFestivalData(data) {
   )
 }
 
-function parseFestivalData(buffer) {
-  const text = buffer.toString('utf8').replace(/^\uFEFF/, '')
-  const payload = JSON.parse(text)
+function normalizeFestivalPayload(payload) {
   const data = payload && payload.data && isValidFestivalData(payload.data)
     ? payload.data
     : payload
@@ -32,6 +31,21 @@ function parseFestivalData(buffer) {
   })
 }
 
+function parseFestivalData(buffer) {
+  const text = buffer.toString('utf8').replace(/^\uFEFF/, '')
+  return normalizeFestivalPayload(JSON.parse(text))
+}
+
+function getBundledFestivalData() {
+  return normalizeFestivalPayload(bundledPayload)
+}
+
+function isSameFestival(data, reference) {
+  const name = String(data && data.festivalMeta && data.festivalMeta.name || '').trim()
+  const referenceName = String(reference && reference.festivalMeta && reference.festivalMeta.name || '').trim()
+  return !!name && name === referenceName
+}
+
 async function getConfigFromDatabase() {
   try {
     const res = await db.collection(CONFIG_COLLECTION).doc(CONFIG_DOC_ID).get()
@@ -42,10 +56,12 @@ async function getConfigFromDatabase() {
 }
 
 exports.main = async event => {
+  const bundledData = getBundledFestivalData()
   try {
     const config = await getConfigFromDatabase()
+    const requestedFileID = String(event && event.fileID || '').trim()
     const fileID = String(
-      (event && event.fileID) ||
+      requestedFileID ||
       process.env.FESTIVAL_DATA_FILE_ID ||
       config.fileID ||
       ''
@@ -53,15 +69,26 @@ exports.main = async event => {
 
     if (!fileID) {
       return {
-        ok: false,
-        source: 'fallback',
-        code: 'NO_DATA_FILE',
-        message: 'Festival data file is not configured.'
+        ok: true,
+        source: 'bundled',
+        data: bundledData,
+        dataVersion: bundledData.dataVersion || '',
+        updatedAt: bundledPayload.updatedAt || ''
       }
     }
 
     const file = await cloud.downloadFile({ fileID })
     const data = parseFestivalData(file.fileContent)
+    if (!isSameFestival(data, bundledData)) {
+      return {
+        ok: true,
+        source: 'bundled',
+        data: bundledData,
+        dataVersion: bundledData.dataVersion || '',
+        updatedAt: bundledPayload.updatedAt || '',
+        ignoredRemote: data.festivalMeta && data.festivalMeta.name || ''
+      }
+    }
 
     return {
       ok: true,
@@ -72,10 +99,12 @@ exports.main = async event => {
     }
   } catch (error) {
     return {
-      ok: false,
-      source: 'fallback',
-      code: 'LOAD_FAILED',
-      message: error.message || 'Failed to load festival data.'
+      ok: true,
+      source: 'bundled',
+      data: bundledData,
+      dataVersion: bundledData.dataVersion || '',
+      updatedAt: bundledPayload.updatedAt || '',
+      warning: error.message || 'Failed to load configured festival data.'
     }
   }
 }

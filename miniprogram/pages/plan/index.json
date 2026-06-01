@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "我的排片",
-  "navigationStyle": "custom"
+  "navigationStyle": "custom",
+  "usingComponents": {
+    "smart-plan": "/components/smart-plan/index"
+  }
 }

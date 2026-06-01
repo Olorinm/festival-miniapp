@@ -29,3 +29,5 @@ project.local.config.json
 
 # Generated offline assets
 cloud-data/douban/
+miniprogram/assets/posters/
+article/

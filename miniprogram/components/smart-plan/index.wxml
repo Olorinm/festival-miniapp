@@ -1,0 +1,46 @@
+<view class="smart-plan-root">
+  <view hidden="{{!smartSheetOpen}}" class="smart-mask" bindtap="closeSmartPlan">
+    <view class="smart-sheet" catchtap="noop">
+    <view class="smart-head">
+      <view class="smart-title">智能排片</view>
+      <view class="smart-close" bindtap="closeSmartPlan">×</view>
+    </view>
+    <view class="smart-input-shell {{smartInputFocus ? 'is-focused' : ''}}" bindtap="focusSmartInput">
+      <view wx:if="{{!smartInstruction && !smartInputFocus}}" class="smart-field-prompt">
+        <view class="smart-prompt-title">输入你的偏好让 AI 帮你排片或者挑电影，你可以说：</view>
+        <view class="smart-prompt-line">- 帮我挑几部高分日影，尽量排到周末</view>
+        <view class="smart-prompt-line">- 优先 Movie Movie 电影院</view>
+        <view class="smart-prompt-line">- 工作日晚上 7 点前不要排，周五晚上 6 点后可以</view>
+        <view class="smart-prompt-line">- 只看周末，一天最多三场</view>
+      </view>
+      <textarea
+        class="smart-input {{smartInstruction || smartInputFocus ? 'has-value' : ''}}"
+        value="{{smartInstruction}}"
+        maxlength="240"
+        auto-height
+        fixed
+        focus="{{smartInputFocus}}"
+        placeholder=""
+        bindfocus="focusSmartInput"
+        bindblur="blurSmartInput"
+        bindinput="inputSmartInstruction"
+      ></textarea>
+    </view>
+    <view class="smart-actions">
+      <view class="smart-secondary" bindtap="closeSmartPlan">取消</view>
+      <view class="smart-primary {{smartPlanning ? 'is-disabled' : ''}}" bindtap="runSmartPlan">
+        <view class="smart-primary-spark {{smartPlanning ? 'is-spinning' : ''}}">
+          <view class="smart-spark">
+            <view class="smart-spark-point is-top"></view>
+            <view class="smart-spark-point is-right"></view>
+            <view class="smart-spark-point is-bottom"></view>
+            <view class="smart-spark-point is-left"></view>
+            <view class="smart-spark-core"></view>
+          </view>
+        </view>
+        <text class="smart-primary-label">{{smartPlanning ? smartProgressText : smartPrimaryLabel}}</text>
+      </view>
+    </view>
+  </view>
+</view>
+</view>

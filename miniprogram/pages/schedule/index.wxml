@@ -19,7 +19,7 @@
         <input class="search-input" value="{{query}}" bindinput="onSearchInput" placeholder="搜片名、导演、影院" confirm-type="search" />
       </view>
 
-      <view class="smart-entry" bindtap="openSmartPlan" hover-class="smart-entry-tap">
+      <view class="smart-entry" bindtap="openSmartPlan">
         <view class="smart-icon">
           <view class="smart-spark">
             <view class="smart-spark-point is-top"></view>
@@ -36,58 +36,86 @@
 
     <view class="schedule-filter-bar">
       <view class="scope-segment">
-        <block
+        <view
           wx:for="{{filterChips}}"
           wx:key="key"
+          class="scope-option {{item.active ? 'is-active' : ''}}"
+          data-type="{{item.type}}"
+          data-value="{{item.value}}"
+          bindtap="tapFilter"
         >
-          <view
-            wx:if="{{item.type === 'scope'}}"
-            class="scope-option {{item.active ? 'is-active' : ''}}"
-            data-type="{{item.type}}"
-            data-value="{{item.value}}"
-            bindtap="tapFilter"
-          >
-            <text class="filter-label">{{item.label}}</text>
-          </view>
-        </block>
+          <text class="filter-label">{{item.label}}</text>
+        </view>
       </view>
 
-      <scroll-view class="tool-filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
-        <view class="tool-filter-row">
-          <block
-            wx:for="{{filterChips}}"
-            wx:key="key"
-          >
-            <view
-              wx:if="{{item.type !== 'scope'}}"
-              class="tool-filter-chip {{item.active ? 'is-active' : ''}}"
-              data-type="{{item.type}}"
-              data-value="{{item.value}}"
-              bindtap="tapFilter"
-            >
-              <text class="filter-label">{{item.label}}</text>
-              <text class="filter-triangle">▼</text>
-            </view>
-          </block>
-        </view>
-      </scroll-view>
+      <view class="tool-filter-chip {{filterPanelOpen ? 'is-active' : ''}}" bindtap="toggleFilterPanel">
+        <text class="filter-label">筛选</text>
+        <text wx:if="{{filterActiveCount}}" class="filter-count">· {{filterActiveCount}}</text>
+      </view>
+
+      <view class="tool-filter-chip {{fieldPanelOpen ? 'is-active' : ''}}" bindtap="toggleFieldPanel">
+        <text class="filter-label">字段</text>
+      </view>
     </view>
 
-    <scroll-view wx:if="{{filterOptions.length}}" class="filter-option-scroll" scroll-x enhanced show-scrollbar="{{false}}">
-      <view class="filter-option-row">
-        <view
-          wx:for="{{filterOptions}}"
-          wx:key="key"
-          class="filter-option {{item.picked ? 'is-picked' : ''}}"
-          data-type="{{activeFilter}}"
-          data-value="{{item.key}}"
-          bindtap="selectFilterOption"
-        >
-          <text class="filter-option-label">{{item.label}}</text>
-          <text class="filter-option-count">{{item.count}}</text>
+    <view wx:if="{{filterPanelOpen}}" class="filter-panel">
+      <view wx:for="{{filterGroups}}" wx:for-item="group" wx:key="type" class="filter-group">
+        <view class="filter-group-head">
+          <text class="filter-group-label">{{group.label}}</text>
+        </view>
+        <scroll-view class="filter-group-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+          <view class="filter-group-row">
+            <view
+              wx:for="{{group.options}}"
+              wx:key="key"
+              class="filter-option {{item.picked ? 'is-picked' : ''}}"
+              data-type="{{group.type}}"
+              data-value="{{item.key}}"
+              bindtap="selectFilterOption"
+            >
+              <text class="filter-option-label">{{item.label}}</text>
+              <text class="filter-option-count">{{item.count}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <view class="filter-group">
+        <view class="filter-group-head">
+          <text class="filter-group-label">豆瓣评分</text>
+          <text class="filter-slider-value">{{doubanMin > 0 ? doubanMin + ' 分以上' : '不限'}}</text>
+        </view>
+        <slider min="0" max="9.5" step="0.5" value="{{doubanMin}}" block-size="20" activeColor="#171917" bindchanging="onDoubanChanging" bindchange="onDoubanChange" />
+      </view>
+
+      <view class="filter-group">
+        <view class="filter-group-head">
+          <text class="filter-group-label">IMDb 评分</text>
+          <text class="filter-slider-value">{{imdbMin > 0 ? imdbMin + ' 分以上' : '不限'}}</text>
+        </view>
+        <slider min="0" max="9.5" step="0.5" value="{{imdbMin}}" block-size="20" activeColor="#171917" bindchanging="onImdbChanging" bindchange="onImdbChange" />
+      </view>
+
+      <view wx:if="{{filterActiveCount}}" class="filter-panel-reset" bindtap="resetFilters">重置筛选</view>
+    </view>
+
+    <view wx:if="{{fieldPanelOpen}}" class="filter-panel">
+      <view
+        wx:for="{{fieldOptions}}"
+        wx:key="key"
+        class="field-row"
+        data-key="{{item.key}}"
+        bindtap="toggleField"
+      >
+        <view class="field-row-text">
+          <view class="field-row-label">{{item.label}}</view>
+          <view wx:if="{{item.desc}}" class="field-row-desc">{{item.desc}}</view>
+        </view>
+        <view class="field-switch {{fieldConfig[item.key] ? 'is-on' : ''}}">
+          <view class="field-switch-dot"></view>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view wx:if="{{screeningCount === 0}}" class="empty-state">
@@ -140,16 +168,26 @@
           </view>
 
           <view class="screening-card {{item.selected ? 'is-selected' : ''}}">
+            <view wx:if="{{item.isMock}}" class="mock-stamp">{{item.mockLabel ? item.mockLabel : '测试场次'}}</view>
             <navigator class="screening-body" url="/pages/film/detail?id={{item.filmId}}">
-              <view class="screen-title-row">
-                <view class="screen-title">{{item.cnTitle}}</view>
-              </view>
-              <view wx:if="{{item.screenMeta}}" class="screen-meta">{{item.screenMeta}}</view>
-              <view class="venue-line">{{item.cinema}} · {{item.hall}}</view>
-              <view class="tag-line">
-                <text class="interest tone-{{item.interestTone}}">{{item.interestLabel}}</text>
-                <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
-                <text class="ticket">{{item.ticket}}</text>
+              <view class="screen-info">
+                <view class="screen-title-row">
+                  <view class="screen-title">{{item.cnTitle}}</view>
+                </view>
+                <view wx:if="{{fieldConfig.info && (item.cardMeta || item.screenMeta)}}" class="screen-meta-line">
+                  <text class="screen-meta">{{item.cardMeta || item.screenMeta}}</text>
+                </view>
+                <view wx:if="{{fieldConfig.rating && item.ratingSummary}}" class="rating-line">{{item.ratingSummary}}</view>
+                <view class="venue-line">{{item.cinema}} · {{item.hall}}</view>
+                <view class="tag-line">
+                  <view class="interest tone-{{item.interestTone}}">
+                    <text class="interest-word">{{item.interestWord}}</text>
+                    <text wx:if="{{item.interestStars}}" class="interest-stars">{{item.interestStars}}</text>
+                  </view>
+                  <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
+                  <text wx:if="{{fieldConfig.ticket && item.ticket}}" class="ticket">{{item.ticket}}</text>
+                  <text wx:if="{{fieldConfig.popularity && item.popularityText}}" class="popularity">{{item.popularityText}}</text>
+                </view>
               </view>
             </navigator>
 
@@ -168,7 +206,7 @@
                     <view class="glyph-line is-b"></view>
                   </view>
                 </view>
-                <text class="pick-label">{{item.selected ? '已排' : item.filmScheduled ? '换到这场' : item.pickConflict ? '仍选' : '加入排片'}}</text>
+                <text class="pick-label">{{item.selected ? '已排' : item.filmScheduled ? '换到这场' : item.pickConflict ? '仍选' : '加入'}}</text>
               </view>
               <text wx:if="{{item.filmScheduled && !item.selected}}" class="action-note">已在排片中</text>
             </view>
@@ -178,39 +216,5 @@
     </view>
   </view>
 
-  <view wx:if="{{smartSheetOpen}}" class="smart-mask" bindtap="closeSmartPlan">
-    <view class="smart-sheet" catchtap="noop">
-      <view class="smart-head">
-        <view class="smart-title">智能排片</view>
-        <view class="smart-close" bindtap="closeSmartPlan">×</view>
-      </view>
-      <view class="smart-input-shell {{smartInputFocus ? 'is-focused' : ''}}" bindtap="focusSmartInput">
-        <view wx:if="{{!smartInstruction && !smartInputFocus}}" class="smart-field-prompt">
-          <view class="smart-prompt-title">输入你的偏好让 AI 帮你排片，比如：</view>
-          <view class="smart-prompt-line">- 优先大光明电影院</view>
-          <view class="smart-prompt-line">- 工作日七点前不要排，但周五六点都都可以</view>
-          <view class="smart-prompt-line">- 周末一天最多三场</view>
-        </view>
-        <textarea
-          class="smart-input {{smartInstruction || smartInputFocus ? 'has-value' : ''}}"
-          value="{{smartInstruction}}"
-          maxlength="240"
-          auto-height
-          fixed
-          focus="{{smartInputFocus}}"
-          placeholder=""
-          bindfocus="focusSmartInput"
-          bindblur="blurSmartInput"
-          bindinput="inputSmartInstruction"
-        ></textarea>
-      </view>
-      <view class="smart-actions">
-        <view class="smart-secondary" bindtap="closeSmartPlan">取消</view>
-        <view class="smart-primary {{smartPlanning ? 'is-disabled' : ''}}" bindtap="runSmartPlan">
-          <text class="smart-primary-icon">✦</text>
-          <text>{{smartPlanning ? '生成中' : smartPrimaryLabel}}</text>
-        </view>
-      </view>
-    </view>
-  </view>
+  <smart-plan id="smartPlan"></smart-plan>
 </view>

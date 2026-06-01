@@ -26,4 +26,12 @@
     <view class="section-title">说明</view>
     <view class="section-body">排片、票务和活动信息可能变化，请以官方发布为准。智能排片只做辅助判断。</view>
   </view>
+
+  <view class="about-section">
+    <view class="section-title">交流群</view>
+    <view class="section-body">长按二维码识别加入，反馈问题、交流选片和排片。</view>
+    <view class="group-qr-card" bindtap="previewGroupQr" hover-class="group-qr-tap">
+      <image class="group-qr-image" src="{{groupQrSrc}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
+    </view>
+  </view>
 </view>

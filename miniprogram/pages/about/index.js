@@ -3,7 +3,8 @@ const app = getApp()
 Page({
   data: {
     festivalName: app.globalData.festivalMeta.name,
-    githubUrl: 'https://github.com/Olorinm/festival-miniapp'
+    githubUrl: 'https://github.com/Olorinm/festival-miniapp',
+    groupQrSrc: '/assets/community/wechat-feedback-group.jpg'
   },
 
   onShow() {
@@ -22,6 +23,13 @@ Page({
           icon: 'none'
         })
       }
+    })
+  },
+
+  previewGroupQr() {
+    wx.previewImage({
+      urls: [this.data.groupQrSrc],
+      current: this.data.groupQrSrc
     })
   }
 })

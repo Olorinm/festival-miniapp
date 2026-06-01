@@ -7,7 +7,7 @@ const { getNavMetrics } = require('../../utils/nav')
 const app = getApp()
 
 const POSTER_WIDTH = 750
-const MINIAPP_CODE_PATH = '/assets/brand/miniapp-code.png'
+const MINIAPP_CODE_PATH = ''
 const DEFAULT_POSTER_THEME = 'list'
 const POSTER_FONT_FAMILY = '"PingFang SC", "Hiragino Sans GB", sans-serif'
 const APP_SHARE_NAME = '赶场愉快'
@@ -267,6 +267,11 @@ function formatMinutes(minutes) {
   const hour = Math.floor(minutes / 60)
   const minute = minutes % 60
   return `${hour}小时${minute ? `${minute}分` : ''}`
+}
+
+function popularityText(count) {
+  const value = Number(count) || 0
+  return value > 0 ? `${value} 人已排` : ''
 }
 
 function formatPosterDuration(minutes) {
@@ -606,6 +611,22 @@ function buildCurrentPlan() {
   return buildPlan(app.getSelectedScreeningIds(), allScreenings)
 }
 
+function attachPopularity(plan, counts) {
+  const popularityMap = counts || {}
+  return Object.assign({}, plan, {
+    days: (plan.days || []).map(day => Object.assign({}, day, {
+      items: (day.items || []).map(screening => Object.assign({}, screening, {
+        popularityCount: popularityMap[screening.id] || 0,
+        popularityText: popularityText(popularityMap[screening.id])
+      }))
+    })),
+    selected: (plan.selected || []).map(screening => Object.assign({}, screening, {
+      popularityCount: popularityMap[screening.id] || 0,
+      popularityText: popularityText(popularityMap[screening.id])
+    }))
+  })
+}
+
 Page({
   data: {
     festivalName: app.globalData.festivalMeta.name,
@@ -629,6 +650,7 @@ Page({
     posterSheetOpen: false,
     posterThemes: POSTER_THEMES,
     posterTheme: DEFAULT_POSTER_THEME,
+    posterCodeAvailable: false,
     posterIncludeCode: false,
     posterWidth: POSTER_WIDTH,
     posterHeight: 420,
@@ -644,6 +666,7 @@ Page({
 
   onLoad() {
     this.setNavMetrics()
+    this.refreshPosterCodeAvailability()
   },
 
   onShow() {
@@ -659,12 +682,53 @@ Page({
   },
 
   removeScreening(event) {
+    const id = event.currentTarget.dataset.id
     app.globalData.smartPlanMeta = null
-    app.toggleScreening(event.currentTarget.dataset.id)
+    app.toggleScreening(id)
     this.renderPlan()
+    app.syncScreeningPopularity({
+      queryScreeningIds: [id]
+    }).then(() => this.renderPlan())
+  },
+
+  deletePlanScheme() {
+    const activeScheme = this.data.planSchemes.find(scheme => scheme.active)
+    if (!activeScheme) {
+      return
+    }
+    wx.showModal({
+      title: '删除方案',
+      content: '是否删除此方案？',
+      confirmText: '删除',
+      confirmColor: '#c0392b',
+      success: result => {
+        if (!result.confirm) {
+          return
+        }
+        app.globalData.smartPlanMeta = null
+        const deleted = app.deletePlanScheme(activeScheme.id)
+        const removedIds = deleted ? deleted.selectedIds || [] : []
+        this.renderPlan()
+        app.syncScreeningPopularity({
+          queryScreeningIds: removedIds
+        }).then(() => this.renderPlan())
+        wx.showToast({ title: '已删除', icon: 'none' })
+      }
+    })
   },
 
   noop() {},
+
+  openSmartPlan() {
+    const smartPlan = this.selectComponent('#smartPlan')
+    if (smartPlan) {
+      smartPlan.open()
+    }
+  },
+
+  onSmartPlanned() {
+    this.renderPlan()
+  },
 
   copyPlan() {
     if (!this.data.plan || !this.data.plan.selected.length) {
@@ -711,7 +775,20 @@ Page({
     this.setData({ posterTheme: event.currentTarget.dataset.theme || DEFAULT_POSTER_THEME })
   },
 
+  refreshPosterCodeAvailability() {
+    getImageInfo(MINIAPP_CODE_PATH).then(exists => {
+      this.setData({
+        posterCodeAvailable: exists,
+        posterIncludeCode: exists ? this.data.posterIncludeCode : false
+      })
+    })
+  },
+
   togglePosterCode() {
+    if (!this.data.posterCodeAvailable) {
+      wx.showToast({ title: '先配置小程序码', icon: 'none' })
+      return
+    }
     this.setData({ posterIncludeCode: !this.data.posterIncludeCode })
   },
 
@@ -765,6 +842,9 @@ Page({
       importError: ''
     })
     this.renderPlan()
+    app.syncScreeningPopularity({
+      queryScreeningIds: importIds
+    }).then(() => this.renderPlan())
     wx.showToast({
       title: `${scheme.name} 已导入`,
       icon: 'none'
@@ -820,7 +900,7 @@ Page({
 
     const posterOptions = Object.assign({
       theme: this.data.posterTheme,
-      includeCode: this.data.posterIncludeCode
+      includeCode: this.data.posterCodeAvailable && this.data.posterIncludeCode
     }, options || {})
 
     const continueExport = () => {
@@ -1067,8 +1147,12 @@ Page({
   },
 
   renderPlan() {
+    const renderToken = (this._renderToken || 0) + 1
+    this._renderToken = renderToken
     const allScreenings = buildScreenings(app.globalData.films, app.getFilmMarks())
-    const plan = buildPlan(app.getSelectedScreeningIds(), allScreenings)
+    const rawPlan = buildPlan(app.getSelectedScreeningIds(), allScreenings)
+    const screeningIds = rawPlan.selected.map(screening => screening.id)
+    const plan = attachPopularity(rawPlan, app.getScreeningPopularityMap(screeningIds))
     const activePlanSchemeId = app.getActivePlanSchemeId()
     const planSchemes = app.getPlanSchemes().map((scheme, index) => {
       const schemePlan = buildPlan(scheme.selectedIds || [], allScreenings)
@@ -1106,6 +1190,29 @@ Page({
       currentSchemeSummary: plan.selected.length ? formatExportSummary(plan) : '0 场',
       exportSummary: formatExportSummary(plan),
       empty: plan.selected.length === 0
+    }, () => {
+      this.refreshPopularity(screeningIds, renderToken)
+    })
+  },
+
+  refreshPopularity(screeningIds, renderToken) {
+    app.fetchScreeningPopularity(screeningIds).then(counts => {
+      if (this._renderToken !== renderToken) {
+        return
+      }
+      const updates = {}
+      ;((this.data.plan && this.data.plan.days) || []).forEach((day, dayIndex) => {
+        ;(day.items || []).forEach((screening, screeningIndex) => {
+          const count = counts[screening.id] || 0
+          if (screening.popularityCount !== count) {
+            updates[`plan.days[${dayIndex}].items[${screeningIndex}].popularityCount`] = count
+            updates[`plan.days[${dayIndex}].items[${screeningIndex}].popularityText`] = popularityText(count)
+          }
+        })
+      })
+      if (Object.keys(updates).length) {
+        this.setData(updates)
+      }
     })
   }
 })

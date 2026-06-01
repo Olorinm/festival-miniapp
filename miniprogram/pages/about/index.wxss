@@ -11,7 +11,7 @@
 .about-kicker {
   color: #747a73;
   font-size: 23rpx;
-  font-weight: 560;
+  font-weight: 500;
   line-height: 1.2;
 }
 
@@ -19,7 +19,7 @@
   margin-top: 8rpx;
   color: #171917;
   font-size: 44rpx;
-  font-weight: 760;
+  font-weight: 700;
   line-height: 1.08;
 }
 
@@ -40,7 +40,7 @@
 .section-title {
   color: #171917;
   font-size: 27rpx;
-  font-weight: 680;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -52,6 +52,25 @@
 }
 
 .about-link {
-  color: #3f5b73;
-  font-weight: 620;
+  color: #171917;
+  font-weight: 600;
+}
+
+.group-qr-card {
+  width: 520rpx;
+  max-width: 100%;
+  margin-top: 22rpx;
+  overflow: hidden;
+  border: 1rpx solid #ebece8;
+  border-radius: 16rpx;
+  background: #f7f7f5;
+}
+
+.group-qr-tap {
+  opacity: 0.86;
+}
+
+.group-qr-image {
+  display: block;
+  width: 100%;
 }

@@ -1,33 +1,66 @@
 <view wx:if="{{film}}" class="page detail-page">
   <view class="film-head tone-{{film.interest.tone}}">
-    <view class="head-mark">{{film.interest.shortLabel ? film.interest.shortLabel : '未选'}}</view>
+    <view class="detail-poster {{film.hasPoster ? '' : 'is-placeholder'}}">
+      <image wx:if="{{film.hasPoster}}" class="detail-poster-image" src="{{film.posterSrc}}" mode="aspectFill" lazy-load="true" />
+      <view wx:else class="detail-poster-placeholder">暂无海报</view>
+    </view>
     <view class="head-main">
       <view class="film-title">{{film.cnTitle}}</view>
       <view wx:if="{{film.enTitle}}" class="film-en">{{film.enTitle}}</view>
-      <view wx:if="{{film.metaLine1}}" class="film-meta">{{film.metaLine1}}</view>
-      <view wx:if="{{film.metaLine2}}" class="film-meta">{{film.metaLine2}}</view>
+      <view wx:if="{{film.primaryMeta}}" class="film-meta">{{film.primaryMeta}}</view>
+      <view wx:if="{{film.detailTags.length}}" class="detail-fact-row">
+        <text wx:for="{{film.detailTags}}" wx:key="*this" class="detail-tag">{{item}}</text>
+      </view>
+      <view wx:if="{{film.ratingItems.length}}" class="rating-strip">
+        <view wx:for="{{film.ratingItems}}" wx:key="key" class="rating-item rating-{{item.key}}">
+          <text class="rating-label">{{item.label}}</text>
+          <text class="rating-value">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{film.recommendation}}" class="recommendation-block">
+    <view class="info-title">官方推荐语</view>
+    <view class="recommendation">{{film.recommendation}}</view>
+  </view>
+
+  <view wx:if="{{film.hasInfoRows}}" class="section info-section">
+    <view wx:if="{{film.hasInfoRows}}" class="info-list">
+      <view wx:for="{{film.infoRows}}" wx:key="label" class="info-row">
+        <text class="info-label">{{item.label}}</text>
+        <text class="info-value">{{item.value}}</text>
+      </view>
     </view>
   </view>
 
   <view class="section">
     <view class="section-title">想看程度</view>
-    <view class="mark-row">
-      <view
-        wx:for="{{markOptions}}"
-        wx:key="key"
-        class="mark-button {{film.mark === item.key ? 'is-picked' : ''}} tone-{{item.tone}}"
-        data-mark="{{item.key}}"
-        data-current-mark="{{film.mark}}"
-        bindtap="markFilm"
-      >
-        {{item.shortLabel}}
+    <view class="star-line">
+      <view class="star-row">
+        <view
+          wx:for="{{starSlots}}"
+          wx:for-item="star"
+          wx:key="n"
+          class="star-hit"
+          data-mark="{{star.mark}}"
+          data-current-mark="{{film.mark}}"
+          hover-class="star-tap"
+          hover-start-time="0"
+          hover-stay-time="70"
+          bindtap="markFilm"
+        >
+          <view class="star {{film.interest.rank >= star.n ? 'is-on' : ''}}"></view>
+        </view>
       </view>
+      <text class="star-word {{film.interest.rank ? 'is-set' : ''}}">{{film.interestWord}}</text>
     </view>
   </view>
 
   <view class="section">
     <view class="section-title">可选场次</view>
     <view wx:for="{{screenings}}" wx:key="id" class="screening-card {{item.selected ? 'is-selected' : ''}} {{item.conflict ? 'has-conflict' : ''}}">
+      <view wx:if="{{item.isMock}}" class="mock-stamp">{{item.mockLabel ? item.mockLabel : '测试场次'}}</view>
       <view class="screening-main">
         <view class="screening-time">
           <text class="day">{{item.dayLabel}}</text>
@@ -35,8 +68,9 @@
         </view>
         <view class="venue">{{item.cinema}} · {{item.hall}}</view>
         <view class="ticket-row">
-          <text>{{item.ticketPlan}}</text>
+          <text wx:if="{{item.ticketPlan}}">{{item.ticketPlan}}</text>
           <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
+          <text wx:if="{{item.popularityText}}" class="popularity">{{item.popularityText}}</text>
         </view>
         <view wx:if="{{item.conflict}}" class="conflict">冲突：{{item.conflictText}}</view>
       </view>

@@ -46,32 +46,46 @@ function buildScreenings(films, marks) {
     .reduce((list, film) => {
       const interest = getInterestMeta(filmMarks[film.id] || film.defaultInterest)
       const interestKey = interest.key
-      const rows = film.screenings.map(screening => ({
-        filmId: film.id,
-        cnTitle: film.cnTitle,
-        enTitle: film.enTitle,
-        section: film.section,
-        director: film.director,
-        country: film.country,
-        year: film.year,
-        runtime: film.runtime,
-        interestKey,
-        interest,
-        timeRange: `${screening.start}-${screening.end}`,
-        startMinutes: toMinutes(screening.start),
-        endMinutes: endMinutes(screening),
-        duration: endMinutes(screening) - toMinutes(screening.start),
-        screenMeta: compactMeta([film.section, film.year, film.director]),
-        searchText: [
-          film.cnTitle,
-          film.enTitle,
-          film.director,
-          film.section,
-          screening.cinema,
-          screening.hall
-        ].join(' ').toLowerCase(),
-        ...screening
-      }))
+      const rows = film.screenings.map(screening => {
+        const ticket = sanitizeTicketText(screening.ticket)
+        const ticketPlan = sanitizeTicketText(screening.ticketPlan || ticket)
+        return {
+          filmId: film.id,
+          cnTitle: filmDisplayTitle(film),
+          enTitle: filmEnTitle(film),
+          section: filmSection(film),
+          director: filmDirector(film),
+          country: filmCountry(film),
+          year: filmYear(film),
+          runtime: filmRuntimeMinutes(film),
+          posterSrc: filmPosterSrc(film),
+          cardMeta: compactMeta([filmCoreMeta(film), filmDirector(film)]),
+          sectionLabel: filmSection(film),
+          ratingSummary: filmRatingSummary(film),
+          doubanRating: film.doubanRating,
+          imdbRating: film.imdbRating,
+          interestKey,
+          interest,
+          timeRange: `${screening.start}-${screening.end}`,
+          startMinutes: toMinutes(screening.start),
+          endMinutes: endMinutes(screening),
+          duration: endMinutes(screening) - toMinutes(screening.start),
+          screenMeta: filmScreeningMeta(film),
+          searchText: [
+            filmDisplayTitle(film),
+            filmEnTitle(film),
+            filmDirector(film),
+            filmSection(film),
+            filmCountry(film),
+            filmGenre(film),
+            screening.cinema,
+            screening.hall
+          ].join(' ').toLowerCase(),
+          ...screening,
+          ticket,
+          ticketPlan
+        }
+      })
       return list.concat(rows)
     }, [])
     .sort(byScreeningTime)
@@ -82,6 +96,141 @@ function compactMeta(items) {
     .map(item => String(item || '').trim())
     .filter(Boolean)
     .join(' · ')
+}
+
+function firstText(items) {
+  const list = Array.isArray(items) ? items : [items]
+  const value = list.find(item => String(item || '').trim())
+  return value === undefined ? '' : String(value).trim()
+}
+
+function sanitizeTicketText(value) {
+  const text = firstText(value)
+  if (!text) {
+    return ''
+  }
+
+  return text
+    .split(/\s*[·,，、|｜/]\s*/)
+    .map(item => item.trim())
+    .filter(item => item && item !== '测试场次')
+    .join(' · ')
+}
+
+function filmDisplayTitle(film) {
+  return firstText([film.cnTitle, film.officialTitle, film.title, film.doubanTitle])
+}
+
+function filmEnTitle(film) {
+  return firstText([film.enTitle, film.titleEn, film.originalTitle])
+}
+
+function filmSection(film) {
+  return firstText([film.section, film.unit])
+}
+
+function filmDirector(film) {
+  return firstText([film.director, film.directors])
+}
+
+function filmCountry(film) {
+  return firstText([film.country, film.region, film.countries])
+}
+
+function filmGenre(film) {
+  if (Array.isArray(film.genre)) {
+    return film.genre.filter(Boolean).join(' ')
+  }
+  if (Array.isArray(film.genres)) {
+    return film.genres.filter(Boolean).join(' ')
+  }
+  return firstText([film.genre, film.genres])
+}
+
+function filmYear(film) {
+  const year = firstText([film.year, film.doubanYear, film.excelYear])
+  return year ? String(year) : ''
+}
+
+function numericValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return 0
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0
+  }
+  const matched = String(value).replace(/,/g, '').match(/\d+(?:\.\d+)?/)
+  return matched ? Number(matched[0]) : 0
+}
+
+function filmRuntimeMinutes(film) {
+  const value = numericValue(firstText([film.runtimeMinutes, film.runtime, film.duration]))
+  return value > 0 ? Math.round(value) : 0
+}
+
+function isDefaultPosterSrc(src) {
+  return /\/pics\/subject\/movie_(large|mid|small)\.jpg(?:\?|$)/.test(String(src || ''))
+}
+
+function filmPosterSrc(film) {
+  if (isDefaultPosterSrc(firstText([film.posterUrl, film.coverUrl, film.cover]))) {
+    return ''
+  }
+  return firstText([film.posterCloudFileId, film.posterUrl, film.coverUrl, film.cover, film.posterAssetPath, film.poster])
+}
+
+function formatRating(value) {
+  const rating = numericValue(value)
+  return rating > 0 ? rating.toFixed(1).replace(/\.0$/, '') : ''
+}
+
+function formatRatingCount(value) {
+  const count = Math.round(numericValue(value))
+  if (count <= 0) {
+    return ''
+  }
+  if (count >= 10000) {
+    const rounded = count >= 100000 ? Math.round(count / 10000) : Math.round(count / 1000) / 10
+    return `${rounded}万人`
+  }
+  return `${count}人`
+}
+
+function filmRatingItems(film) {
+  const douban = formatRating(film.doubanRating)
+  const imdb = formatRating(film.imdbRating)
+  const items = []
+  if (douban) {
+    items.push({
+      key: 'douban',
+      label: '豆瓣',
+      value: douban,
+      extra: formatRatingCount(film.doubanRatingCount)
+    })
+  }
+  if (imdb) {
+    items.push({
+      key: 'imdb',
+      label: 'IMDb',
+      value: imdb,
+      extra: ''
+    })
+  }
+  return items
+}
+
+function filmRatingSummary(film) {
+  return filmRatingItems(film)
+    .map(item => `${item.label} ${item.value}`)
+    .join(' · ')
+}
+
+function filmCoreMeta(film) {
+  return compactMeta([filmYear(film), filmCountry(film), runtimeText(filmRuntimeMinutes(film))])
+}
+
+function filmScreeningMeta(film) {
+  return compactMeta([filmSection(film), filmYear(film), runtimeText(filmRuntimeMinutes(film))])
 }
 
 function findFilm(films, filmId) {
@@ -176,8 +325,12 @@ function collectStats(films, selectedIds, marks) {
 }
 
 function runtimeText(runtime) {
-  const hour = Math.floor(runtime / 60)
-  const minute = runtime % 60
+  const minutes = Math.round(numericValue(runtime))
+  if (!minutes) {
+    return ''
+  }
+  const hour = Math.floor(minutes / 60)
+  const minute = minutes % 60
   return hour ? `${hour}小时${minute ? `${minute}分` : ''}` : `${minute}分`
 }
 
@@ -186,9 +339,24 @@ module.exports = {
   buildScreenings,
   collectStats,
   compactMeta,
+  filmCoreMeta,
+  filmCountry,
+  filmDirector,
+  filmDisplayTitle,
+  filmEnTitle,
+  filmGenre,
+  filmPosterSrc,
+  filmRatingItems,
+  filmRatingSummary,
+  filmRuntimeMinutes,
+  filmScreeningMeta,
+  filmSection,
+  filmYear,
   findConflicts,
   findFilm,
   findScreening,
+  firstText,
+  formatRatingCount,
   getInterestMeta,
   groupByDay,
   runtimeText

@@ -1,5 +1,7 @@
 const fallbackFestivalData = require('./data/festival')
 
+const CLOUD_ENV_ID = 'cloud1-d7gzforb6cdf2aa48'
+
 const STORAGE_KEYS = {
   festivalData: 'festival.remoteFestivalData',
   selectedScreeningIds: 'festival.selectedScreeningIds',
@@ -9,6 +11,8 @@ const STORAGE_KEYS = {
 }
 
 const DEFAULT_PLAN_SCHEME_ID = 'plan_default'
+const POPULARITY_SYNC_DELAY = 600
+const SCHEDULE_FIELD_CONFIG_KEY = 'festival.scheduleFieldConfig'
 
 function isValidFestivalData(data) {
   return !!(
@@ -34,6 +38,15 @@ function normalizeFestivalData(data) {
   }
 }
 
+function isCurrentFestivalData(data) {
+  if (!isValidFestivalData(data)) {
+    return false
+  }
+  const currentName = String(fallbackFestivalData.festivalMeta && fallbackFestivalData.festivalMeta.name || '').trim()
+  const incomingName = String(data.festivalMeta && data.festivalMeta.name || '').trim()
+  return !currentName || incomingName === currentName
+}
+
 function uniqueIds(ids) {
   const seen = {}
   return (Array.isArray(ids) ? ids : []).filter(id => {
@@ -45,6 +58,34 @@ function uniqueIds(ids) {
   })
 }
 
+function normalizeSmartPlanMeta(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return null
+  }
+  const instruction = String(meta.instruction || '').trim().slice(0, 500)
+  if (!instruction) {
+    return null
+  }
+  return {
+    mode: String(meta.mode || '').slice(0, 32),
+    allowAddFilms: meta.allowAddFilms === true,
+    source: String(meta.source || '').slice(0, 32),
+    instruction,
+    preferences: meta.preferences && typeof meta.preferences === 'object' ? meta.preferences : null,
+    createdAt: meta.createdAt || Date.now()
+  }
+}
+
+function readScreeningPopularityEnabled() {
+  try {
+    const config = wx.getStorageSync(SCHEDULE_FIELD_CONFIG_KEY)
+    if (config && typeof config === 'object' && config.popularity === false) {
+      return false
+    }
+  } catch (error) {}
+  return true
+}
+
 function makePlanScheme(options) {
   const now = Date.now()
   const source = options || {}
@@ -52,6 +93,7 @@ function makePlanScheme(options) {
     id: source.id || `plan_${now}_${Math.floor(Math.random() * 1000)}`,
     name: source.name || '方案',
     selectedIds: uniqueIds(source.selectedIds),
+    smartPlanMeta: normalizeSmartPlanMeta(source.smartPlanMeta),
     createdAt: source.createdAt || now,
     updatedAt: source.updatedAt || now
   }
@@ -65,6 +107,7 @@ function normalizePlanSchemes(schemes, fallbackSelectedIds) {
       id: item.id,
       name: item.name || `方案 ${index + 1}`,
       selectedIds: item.selectedIds,
+      smartPlanMeta: item.smartPlanMeta,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
     }))
@@ -95,18 +138,19 @@ App({
     activePlanSchemeId: DEFAULT_PLAN_SCHEME_ID,
     filmMarks: {},
     filmViewState: {},
-    smartPlanMeta: null,
-    pendingOpenSmartPlan: false
+    screeningPopularity: {},
+    smartPlanMeta: null
   },
 
   onLaunch() {
     if (wx.cloud) {
       try {
-        wx.cloud.init({ traceUser: true })
+        wx.cloud.init({ env: CLOUD_ENV_ID, traceUser: true })
       } catch (error) {}
     }
     this.loadLocalState()
     this.globalData.festivalDataPromise = this.refreshFestivalData()
+    this.queueScreeningPopularitySync(1200)
   },
 
   loadLocalState() {
@@ -116,11 +160,13 @@ App({
       const planSchemes = wx.getStorageSync(STORAGE_KEYS.planSchemes)
       const activePlanSchemeId = wx.getStorageSync(STORAGE_KEYS.activePlanSchemeId)
       const filmMarks = wx.getStorageSync(STORAGE_KEYS.filmMarks)
-      if (isValidFestivalData(festivalData && festivalData.data)) {
+      if (isCurrentFestivalData(festivalData && festivalData.data)) {
         this.applyFestivalData(festivalData.data, {
           source: 'cache',
           dataVersion: festivalData.dataVersion || 'cached'
         })
+      } else if (festivalData && festivalData.data) {
+        wx.removeStorageSync(STORAGE_KEYS.festivalData)
       }
       this.globalData.planSchemes = normalizePlanSchemes(planSchemes, selectedScreeningIds)
       this.globalData.activePlanSchemeId = activePlanSchemeId || (this.globalData.planSchemes[0] && this.globalData.planSchemes[0].id) || DEFAULT_PLAN_SCHEME_ID
@@ -143,6 +189,7 @@ App({
     this.globalData.festivalDataVersion = (meta && meta.dataVersion) || normalized.dataVersion || 'remote'
     this.globalData.festivalDataSource = (meta && meta.source) || 'remote'
     this.pruneLocalState()
+    this.queueScreeningPopularitySync(1200)
   },
 
   refreshFestivalData() {
@@ -158,6 +205,14 @@ App({
       const result = res && res.result
       if (!result || !result.ok || !isValidFestivalData(result.data)) {
         console.warn('[festival-data] 云数据未加载，使用内置数据', result || res)
+        return { source: 'builtin' }
+      }
+      if (!isCurrentFestivalData(result.data)) {
+        wx.removeStorageSync(STORAGE_KEYS.festivalData)
+        console.warn('[festival-data] 云数据不是当前片单，使用内置数据', {
+          current: fallbackFestivalData.festivalMeta && fallbackFestivalData.festivalMeta.name,
+          remote: result.data.festivalMeta && result.data.festivalMeta.name
+        })
         return { source: 'builtin' }
       }
 
@@ -199,7 +254,8 @@ App({
     const schemes = normalizePlanSchemes(this.globalData.planSchemes, this.globalData.selectedScreeningIds)
       .map((scheme, index) => Object.assign({}, scheme, {
         name: scheme.name || `方案 ${index + 1}`,
-        selectedIds: uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id])
+        selectedIds: uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id]),
+        smartPlanMeta: normalizeSmartPlanMeta(scheme.smartPlanMeta)
       }))
     const activePlanSchemeId = schemes.some(scheme => scheme.id === this.globalData.activePlanSchemeId)
       ? this.globalData.activePlanSchemeId
@@ -216,6 +272,7 @@ App({
     this.globalData.planSchemes = schemes
     this.globalData.activePlanSchemeId = activePlanSchemeId
     this.globalData.selectedScreeningIds = selectedIds
+    this.globalData.smartPlanMeta = normalizeSmartPlanMeta(activeScheme && activeScheme.smartPlanMeta)
     this.globalData.filmMarks = marks
     try {
       wx.setStorageSync(STORAGE_KEYS.selectedScreeningIds, selectedIds)
@@ -237,6 +294,7 @@ App({
     const active = this.globalData.planSchemes.find(scheme => scheme.id === this.globalData.activePlanSchemeId) || this.globalData.planSchemes[0]
     this.globalData.activePlanSchemeId = active.id
     this.globalData.selectedScreeningIds = uniqueIds(active.selectedIds)
+    this.globalData.smartPlanMeta = normalizeSmartPlanMeta(active.smartPlanMeta)
   },
 
   persistPlanState() {
@@ -245,6 +303,7 @@ App({
       wx.setStorageSync(STORAGE_KEYS.planSchemes, this.globalData.planSchemes || [])
       wx.setStorageSync(STORAGE_KEYS.activePlanSchemeId, this.globalData.activePlanSchemeId)
     } catch (error) {}
+    this.queueScreeningPopularitySync()
   },
 
   getPlanSchemes() {
@@ -263,7 +322,6 @@ App({
       return false
     }
     this.globalData.activePlanSchemeId = id
-    this.globalData.smartPlanMeta = null
     this.syncActivePlanFromSchemes()
     this.persistPlanState()
     return true
@@ -308,6 +366,27 @@ App({
     return true
   },
 
+  deletePlanScheme(id) {
+    this.ensurePlanSchemes()
+    const index = this.globalData.planSchemes.findIndex(scheme => scheme.id === id)
+    if (index < 0) {
+      return null
+    }
+
+    const deleted = this.globalData.planSchemes[index]
+    let nextSchemes = this.globalData.planSchemes.filter(scheme => scheme.id !== id)
+    if (!nextSchemes.length) {
+      nextSchemes = [makePlanScheme({ name: '方案 1', selectedIds: [] })]
+    }
+
+    const nextActive = nextSchemes[Math.min(index, nextSchemes.length - 1)] || nextSchemes[0]
+    this.globalData.planSchemes = nextSchemes
+    this.globalData.activePlanSchemeId = nextActive.id
+    this.syncActivePlanFromSchemes()
+    this.persistPlanState()
+    return deleted
+  },
+
   getSelectedScreeningIds() {
     return this.globalData.selectedScreeningIds || []
   },
@@ -322,6 +401,7 @@ App({
       }
       return Object.assign({}, scheme, {
         selectedIds,
+        smartPlanMeta: normalizeSmartPlanMeta(this.globalData.smartPlanMeta),
         updatedAt: Date.now()
       })
     })
@@ -349,5 +429,172 @@ App({
     }
     this.globalData.filmMarks = next
     wx.setStorageSync(STORAGE_KEYS.filmMarks, next)
+  },
+
+  getFestivalPopularityId() {
+    const meta = this.globalData.festivalMeta || {}
+    return String(meta.id || meta.slug || meta.name || this.globalData.festivalDataVersion || 'current')
+  },
+
+  getAllPlannedScreeningIds() {
+    this.ensurePlanSchemes()
+    const ids = []
+    ;(this.globalData.planSchemes || []).forEach(scheme => {
+      ;(scheme.selectedIds || []).forEach(id => ids.push(id))
+    })
+    return uniqueIds(ids)
+  },
+
+  getScreeningFilmMap() {
+    const map = {}
+    ;(this.globalData.films || []).forEach(film => {
+      ;(film.screenings || []).forEach(screening => {
+        if (screening && screening.id) {
+          map[screening.id] = film.id
+        }
+      })
+    })
+    return map
+  },
+
+  buildPopularityScreenings(screeningIds) {
+    const filmMap = this.getScreeningFilmMap()
+    return uniqueIds(screeningIds).map(id => ({
+      screeningId: id,
+      filmId: filmMap[id] || ''
+    }))
+  },
+
+  mergeScreeningPopularity(counts) {
+    const next = Object.assign({}, this.globalData.screeningPopularity || {})
+    Object.keys(counts || {}).forEach(id => {
+      const count = Number(counts[id])
+      next[id] = Number.isFinite(count) && count > 0 ? count : 0
+    })
+    this.globalData.screeningPopularity = next
+    return next
+  },
+
+  getScreeningPopularityMap(screeningIds) {
+    if (!this.isScreeningPopularityEnabled()) {
+      return uniqueIds(screeningIds).reduce((map, id) => {
+        map[id] = 0
+        return map
+      }, {})
+    }
+    const source = this.globalData.screeningPopularity || {}
+    return uniqueIds(screeningIds).reduce((map, id) => {
+      map[id] = source[id] || 0
+      return map
+    }, {})
+  },
+
+  isScreeningPopularityEnabled() {
+    return readScreeningPopularityEnabled()
+  },
+
+  queueScreeningPopularitySync(delay) {
+    if (this._screeningPopularityTimer) {
+      clearTimeout(this._screeningPopularityTimer)
+      this._screeningPopularityTimer = null
+    }
+    if (!this.isScreeningPopularityEnabled()) {
+      return
+    }
+    this._screeningPopularityTimer = setTimeout(() => {
+      this._screeningPopularityTimer = null
+      this.syncScreeningPopularity()
+    }, Number.isFinite(delay) ? delay : POPULARITY_SYNC_DELAY)
+  },
+
+  syncScreeningPopularity(options) {
+    if (!this.isScreeningPopularityEnabled()) {
+      this._screeningPopularityQueuedQueryIds = []
+      return Promise.resolve(this.globalData.screeningPopularity || {})
+    }
+    this._screeningPopularityQueuedQueryIds = uniqueIds([].concat(
+      this._screeningPopularityQueuedQueryIds || [],
+      options && options.queryScreeningIds || []
+    ))
+    const run = () => {
+      const queuedQueryIds = this._screeningPopularityQueuedQueryIds || []
+      this._screeningPopularityQueuedQueryIds = []
+      if (!wx.cloud || !wx.cloud.callFunction) {
+        return Promise.resolve(this.globalData.screeningPopularity || {})
+      }
+      const ids = this.getAllPlannedScreeningIds()
+      const queryIds = uniqueIds([].concat(ids, queuedQueryIds))
+      return wx.cloud.callFunction({
+        name: 'screeningPopularity',
+        data: {
+          action: 'sync',
+          festivalId: this.getFestivalPopularityId(),
+          screeningIds: ids,
+          queryScreeningIds: queryIds,
+          screenings: this.buildPopularityScreenings(queryIds)
+        }
+      }).then(res => {
+        const result = res && res.result
+        if (result && result.ok) {
+          return this.mergeScreeningPopularity(result.counts)
+        }
+        return this.globalData.screeningPopularity || {}
+      }).catch(error => {
+        console.warn('[screening-popularity] sync failed', error)
+        return this.globalData.screeningPopularity || {}
+      })
+    }
+    this._screeningPopularitySyncChain = (this._screeningPopularitySyncChain || Promise.resolve()).then(run, run)
+    return this._screeningPopularitySyncChain
+  },
+
+  clearScreeningPopularitySelection() {
+    this._screeningPopularityQueuedQueryIds = []
+    if (this._screeningPopularityTimer) {
+      clearTimeout(this._screeningPopularityTimer)
+      this._screeningPopularityTimer = null
+    }
+    if (!wx.cloud || !wx.cloud.callFunction) {
+      return Promise.resolve(this.globalData.screeningPopularity || {})
+    }
+    const run = () => wx.cloud.callFunction({
+      name: 'screeningPopularity',
+      data: {
+        action: 'sync',
+        festivalId: this.getFestivalPopularityId(),
+        screeningIds: [],
+        queryScreeningIds: [],
+        screenings: []
+      }
+    }).catch(error => {
+      console.warn('[screening-popularity] clear failed', error)
+      return null
+    })
+    this._screeningPopularitySyncChain = (this._screeningPopularitySyncChain || Promise.resolve()).then(run, run)
+    return this._screeningPopularitySyncChain
+  },
+
+  fetchScreeningPopularity(screeningIds) {
+    const ids = uniqueIds(screeningIds)
+    if (!ids.length || !this.isScreeningPopularityEnabled() || !wx.cloud || !wx.cloud.callFunction) {
+      return Promise.resolve(this.getScreeningPopularityMap(ids))
+    }
+    return wx.cloud.callFunction({
+      name: 'screeningPopularity',
+      data: {
+        action: 'get',
+        festivalId: this.getFestivalPopularityId(),
+        screeningIds: ids
+      }
+    }).then(res => {
+      const result = res && res.result
+      if (result && result.ok) {
+        this.mergeScreeningPopularity(result.counts)
+      }
+      return this.getScreeningPopularityMap(ids)
+    }).catch(error => {
+      console.warn('[screening-popularity] fetch failed', error)
+      return this.getScreeningPopularityMap(ids)
+    })
   }
 })

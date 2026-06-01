@@ -4,13 +4,6 @@ const {
   findScreening,
   groupByDay
 } = require('../../utils/schedule')
-const {
-  buildSmartPlan,
-  mergePreferenceOverrides,
-  parsePreferenceInstruction,
-  SMART_MODE_MARKED,
-  SMART_MODE_PICK
-} = require('../../utils/smart-plan')
 const { getNavMetrics } = require('../../utils/nav')
 
 const app = getApp()
@@ -19,11 +12,42 @@ const SCOPE_WANTED = 'wanted'
 const SCOPE_ALL = 'all'
 const ALL_DIRECTORS = 'all'
 const ALL_CINEMAS = 'all'
+const ALL_SECTIONS = 'all'
+
+function ratingValue(value) {
+  const num = Number(value)
+  return Number.isFinite(num) && num > 0 ? num : 0
+}
 const EMPTY_WANTED_TITLE = '请先到「选电影」里挑选你喜欢的电影'
 const EMPTY_WANTED_HINT = '也可以看完整时间表，或者让 AI 先帮你排一版'
 const PROGRESSIVE_RENDER_THRESHOLD = 180
 const PROGRESSIVE_GROUP_BATCH_SIZE = 1
 const PROGRESSIVE_GROUP_DELAY = 40
+
+const FIELD_CONFIG_KEY = 'festival.scheduleFieldConfig'
+const FIELD_OPTIONS = [
+  { key: 'info', label: '影片信息', desc: '年份 · 导演 · 片长' },
+  { key: 'rating', label: '影片评分', desc: '豆瓣 / IMDb 评分' },
+  { key: 'ticket', label: '特殊场次', desc: '4K修复 · 映后交流等标签' },
+  { key: 'popularity', label: '热度情况', desc: '关闭后不显示热度，也停止统计你选择的场次' }
+]
+const DEFAULT_FIELD_CONFIG = { info: true, rating: false, ticket: true, popularity: true }
+
+function readFieldConfig() {
+  try {
+    const stored = wx.getStorageSync(FIELD_CONFIG_KEY)
+    if (stored && typeof stored === 'object') {
+      return Object.assign({}, DEFAULT_FIELD_CONFIG, stored)
+    }
+  } catch (error) {}
+  return Object.assign({}, DEFAULT_FIELD_CONFIG)
+}
+
+function writeFieldConfig(config) {
+  try {
+    wx.setStorageSync(FIELD_CONFIG_KEY, config)
+  } catch (error) {}
+}
 
 function buildWantedScreenings(marks) {
   return buildScreenings(app.globalData.films, marks).filter(screening => screening.interest.rank > 0)
@@ -31,13 +55,6 @@ function buildWantedScreenings(marks) {
 
 function buildAllScreenings(marks) {
   return buildScreenings(app.globalData.films, marks)
-}
-
-function getSmartToastTitle(instruction, source) {
-  if (!instruction) {
-    return '已生成排片'
-  }
-  return source === 'ai' ? 'AI已解析' : '本地排片'
 }
 
 function matchesKeyword(screening, keyword) {
@@ -75,102 +92,9 @@ function countOptions(items, getKey, getLabel) {
     .sort((a, b) => b.count - a.count || compareText(a.label, b.label))
 }
 
-function shortCinemaName(cinema) {
-  return String(cinema || '')
-    .replace(/（.*?）/g, '')
-    .replace(/\(.*?\)/g, '')
-    .slice(0, 8)
-}
-
-function detectSmartMode(instruction, hasMarkedFilms) {
-  if (!hasMarkedFilms) {
-    return SMART_MODE_PICK
-  }
-
-  const text = String(instruction || '')
-  return /帮我选|推荐|选几部|挑几部|随便|不知道看什么|没选|没有标|补几部|补一些|也可以帮我选|帮我挑/.test(text)
-    ? SMART_MODE_PICK
-    : SMART_MODE_MARKED
-}
-
-function normalizeSmartMode(mode, instruction, hasMarkedFilms) {
-  if (mode === SMART_MODE_PICK) {
-    return SMART_MODE_PICK
-  }
-  if (mode === SMART_MODE_MARKED && hasMarkedFilms) {
-    return SMART_MODE_MARKED
-  }
-  return detectSmartMode(instruction, hasMarkedFilms)
-}
-
-function cleanFilmIntro(film) {
-  return String(film.summary || film.synopsis || film.intro || film.logline || '')
-    .replace(/^\d{4}\s*BJIFF片单导入\s*·?\s*/i, '')
-    .replace(/共\s*\d+\s*场/g, '')
-    .replace(/\s*·\s*$/g, '')
-    .trim()
-    .slice(0, 48)
-}
-
-function buildSmartFilmCatalog(films) {
-  return (films || []).map(film => {
-    const item = {
-      id: film.id,
-      title: film.cnTitle || film.enTitle || '',
-      year: film.year || '',
-      section: film.section || ''
-    }
-    if (film.enTitle) {
-      item.enTitle = film.enTitle
-    }
-    if (film.director) {
-      item.director = film.director
-    }
-    if (film.country) {
-      item.country = film.country
-    }
-    if (film.runtime) {
-      item.runtime = film.runtime
-    }
-    const intro = cleanFilmIntro(film)
-    if (intro && intro !== String(film.year || '')) {
-      item.intro = intro
-    }
-    return item
-  })
-}
-
-function normalizeFilmWeights(weights) {
-  if (!weights || typeof weights !== 'object') {
-    return {}
-  }
-
-  return Object.keys(weights).reduce((map, id) => {
-    const value = Number(weights[id])
-    if (id && Number.isFinite(value) && value > 0) {
-      map[id] = Math.max(0, Math.min(100, Math.round(value)))
-    }
-    return map
-  }, {})
-}
-
-function normalizeSelectedFilmIds(ids) {
-  if (!Array.isArray(ids)) {
-    return []
-  }
-
-  const seen = {}
-  return ids
-    .map(id => String(id || '').trim())
-    .filter(Boolean)
-    .filter(id => {
-      if (seen[id]) {
-        return false
-      }
-      seen[id] = true
-      return true
-    })
-    .slice(0, 80)
+function popularityText(count) {
+  const value = Number(count) || 0
+  return value > 0 ? `${value} 人已排` : ''
 }
 
 Page({
@@ -178,12 +102,16 @@ Page({
     festivalName: app.globalData.festivalMeta.name,
     query: '',
     activeScope: SCOPE_WANTED,
-    activeFilter: '',
     activeDay: '',
     activeDirector: ALL_DIRECTORS,
     activeCinema: ALL_CINEMAS,
+    activeSection: ALL_SECTIONS,
+    doubanMin: 0,
+    imdbMin: 0,
     filterChips: [],
-    filterOptions: [],
+    filterGroups: [],
+    filterActiveCount: 0,
+    filterPanelOpen: false,
     dayTabs: [],
     screeningCount: 0,
     screeningGroups: [],
@@ -192,11 +120,9 @@ Page({
     emptyTitle: EMPTY_WANTED_TITLE,
     emptyHint: '',
     emptyShowActions: false,
-    smartSheetOpen: false,
-    smartInstruction: '',
-    smartInputFocus: false,
-    smartPlanning: false,
-    smartPrimaryLabel: 'AI 直接排片',
+    fieldOptions: FIELD_OPTIONS,
+    fieldConfig: readFieldConfig(),
+    fieldPanelOpen: false,
     navTop: 0,
     navHeight: 44,
     navRight: 120,
@@ -223,10 +149,6 @@ Page({
     app.whenFestivalDataReady().then(() => {
       this.renderSchedule()
     })
-    if (app.globalData.pendingOpenSmartPlan) {
-      app.globalData.pendingOpenSmartPlan = false
-      setTimeout(() => this.openSmartPlan(), 0)
-    }
   },
 
   setNavMetrics() {
@@ -236,7 +158,6 @@ Page({
   resetInitialScope() {
     this.setData({
       activeScope: SCOPE_WANTED,
-      activeFilter: '',
       activeDay: ALL_DAYS,
       activeDirector: ALL_DIRECTORS,
       activeCinema: ALL_CINEMAS,
@@ -249,23 +170,67 @@ Page({
     if (type === 'scope') {
       this.setData({
         activeScope: value === SCOPE_ALL ? SCOPE_ALL : SCOPE_WANTED,
-        activeFilter: '',
         activeDay: ALL_DAYS,
         activeDirector: ALL_DIRECTORS,
         activeCinema: ALL_CINEMAS,
         collapsedDays: {}
       }, () => this.renderSchedule())
-      return
     }
+  },
 
+  noop() {},
+
+  toggleFilterPanel() {
     this.setData({
-      activeFilter: this.data.activeFilter === type ? '' : type
+      filterPanelOpen: !this.data.filterPanelOpen,
+      fieldPanelOpen: false
+    })
+  },
+
+  closeFilterPanel() {
+    this.setData({ filterPanelOpen: false })
+  },
+
+  toggleFieldPanel() {
+    this.setData({
+      fieldPanelOpen: !this.data.fieldPanelOpen,
+      filterPanelOpen: false
+    })
+  },
+
+  toggleField(event) {
+    const key = event.currentTarget.dataset.key
+    const next = Object.assign({}, this.data.fieldConfig, {
+      [key]: !this.data.fieldConfig[key]
+    })
+    writeFieldConfig(next)
+    this.setData({ fieldConfig: next }, () => {
+      if (key === 'popularity') {
+        if (next.popularity) {
+          app.queueScreeningPopularitySync(0)
+        } else {
+          app.clearScreeningPopularitySelection()
+        }
+        this.renderSchedule()
+      }
+    })
+  },
+
+  resetFilters() {
+    this.setData({
+      activeDay: ALL_DAYS,
+      activeDirector: ALL_DIRECTORS,
+      activeCinema: ALL_CINEMAS,
+      activeSection: ALL_SECTIONS,
+      doubanMin: 0,
+      imdbMin: 0,
+      collapsedDays: {}
     }, () => this.renderSchedule())
   },
 
   selectFilterOption(event) {
     const { type, value } = event.currentTarget.dataset
-    const updates = { activeFilter: '' }
+    const updates = {}
     if (type === 'date') {
       updates.activeDay = value || ALL_DAYS
       updates.collapsedDays = {}
@@ -276,7 +241,26 @@ Page({
     if (type === 'cinema') {
       updates.activeCinema = value || ALL_CINEMAS
     }
+    if (type === 'section') {
+      updates.activeSection = value || ALL_SECTIONS
+    }
     this.setData(updates, () => this.renderSchedule())
+  },
+
+  onDoubanChanging(event) {
+    this.setData({ doubanMin: event.detail.value })
+  },
+
+  onDoubanChange(event) {
+    this.setData({ doubanMin: event.detail.value }, () => this.renderSchedule())
+  },
+
+  onImdbChanging(event) {
+    this.setData({ imdbMin: event.detail.value })
+  },
+
+  onImdbChange(event) {
+    this.setData({ imdbMin: event.detail.value }, () => this.renderSchedule())
   },
 
   goFilms() {
@@ -286,7 +270,6 @@ Page({
   showAllScreenings() {
     this.setData({
       activeScope: SCOPE_ALL,
-      activeFilter: '',
       activeDay: ALL_DAYS,
       activeDirector: ALL_DIRECTORS,
       activeCinema: ALL_CINEMAS,
@@ -367,159 +350,20 @@ Page({
       duration: 1000
     })
     this.renderSchedule()
+    app.syncScreeningPopularity({
+      queryScreeningIds: nextSelectedIds.concat(id)
+    }).then(() => this.renderSchedule())
   },
 
   openSmartPlan() {
-    const hasMarkedFilms = buildWantedScreenings(app.getFilmMarks()).length > 0
-    this.setData({
-      smartSheetOpen: true,
-      smartInputFocus: false,
-      smartPrimaryLabel: this.data.smartInstruction.trim()
-        ? 'AI 解析并排片'
-        : hasMarkedFilms
-          ? 'AI 直接排片'
-          : 'AI 选片并排片'
-    })
-  },
-
-  closeSmartPlan() {
-    if (this.data.smartPlanning) {
-      return
+    const smartPlan = this.selectComponent('#smartPlan')
+    if (smartPlan) {
+      smartPlan.open()
     }
-    this.setData({ smartSheetOpen: false, smartInputFocus: false })
-  },
-
-  noop() {},
-
-  focusSmartInput() {
-    this.setData({ smartInputFocus: true })
-  },
-
-  blurSmartInput() {
-    this.setData({ smartInputFocus: false })
-  },
-
-  inputSmartInstruction(event) {
-    const value = event.detail.value || ''
-    const hasMarkedFilms = buildWantedScreenings(app.getFilmMarks()).length > 0
-    this.setData({
-      smartInstruction: value,
-      smartPrimaryLabel: value.trim()
-        ? 'AI 解析并排片'
-        : hasMarkedFilms
-          ? 'AI 直接排片'
-          : 'AI 选片并排片'
-    })
   },
 
   onSearchInput(event) {
     this.setData({ query: event.detail.value || '' }, () => this.renderSchedule())
-  },
-
-  parseWithAI(instruction, localParsed, context) {
-    if (!instruction || !wx.cloud || !wx.cloud.callFunction) {
-      return Promise.resolve(Object.assign({ source: instruction ? 'fallback' : 'script' }, localParsed))
-    }
-
-    return new Promise(resolve => {
-      wx.cloud.callFunction({
-        name: 'parsePreference',
-        data: {
-          instruction,
-          hasMarkedFilms: !!(context && context.hasMarkedFilms),
-          films: context && context.films ? context.films : []
-        },
-        success: res => {
-          const result = res && res.result
-          if (!result || !result.preferences) {
-            console.warn('[smart-plan] AI解析失败，使用本地规则', result || res)
-            resolve(Object.assign({ source: 'fallback' }, localParsed))
-            return
-          }
-
-          console.info('[smart-plan] 偏好解析结果', {
-            source: result.source === 'ai' ? 'ai' : 'fallback',
-            labels: result.labels || [],
-            preferences: result.preferences || {}
-          })
-          resolve({
-            source: result.source === 'ai' ? 'ai' : 'fallback',
-            mode: result.mode,
-            selectedFilmIds: normalizeSelectedFilmIds(result.selectedFilmIds),
-            filmWeights: normalizeFilmWeights(result.filmWeights),
-            preferences: mergePreferenceOverrides(localParsed.preferences, result.preferences),
-            labels: Array.isArray(result.labels) && result.labels.length ? result.labels : localParsed.labels
-          })
-        },
-        fail: error => {
-          console.warn('[smart-plan] AI云函数调用失败，使用本地规则', error)
-          resolve(Object.assign({ source: 'fallback' }, localParsed))
-        }
-      })
-    })
-  },
-
-  runSmartPlan() {
-    if (this.data.smartPlanning) {
-      return
-    }
-
-    const marks = app.getFilmMarks()
-    const allScreenings = buildAllScreenings(marks)
-    const wantedScreenings = allScreenings.filter(screening => screening.interest.rank > 0)
-    if (!allScreenings.length) {
-      wx.showToast({ title: '暂无场次', icon: 'none' })
-      return
-    }
-
-    this.setData({ smartPlanning: true })
-    const instruction = this.data.smartInstruction.trim()
-    const hasMarkedFilms = wantedScreenings.length > 0
-    const aiInstruction = instruction || (hasMarkedFilms ? '' : '请根据片单帮我选一组值得看的电影并排片')
-    const localMode = detectSmartMode(instruction, hasMarkedFilms)
-    const localParsed = Object.assign(parsePreferenceInstruction(instruction), {
-      mode: localMode,
-      selectedFilmIds: [],
-      filmWeights: {}
-    })
-
-    this.parseWithAI(aiInstruction, localParsed, {
-      hasMarkedFilms,
-      films: buildSmartFilmCatalog(app.globalData.films)
-    }).then(parsed => {
-      const mode = normalizeSmartMode(parsed.mode, instruction, hasMarkedFilms)
-      const candidateScreenings = mode === SMART_MODE_PICK ? allScreenings : wantedScreenings
-      const result = buildSmartPlan(candidateScreenings, parsed.preferences, {
-        mode,
-        selectedFilmIds: parsed.selectedFilmIds,
-        filmWeights: parsed.filmWeights
-      })
-
-      this.setData({ smartPlanning: false })
-      if (!result.selectedIds.length) {
-        wx.showToast({ title: mode === SMART_MODE_PICK ? '没有可排场次' : '先标星', icon: 'none' })
-        return
-      }
-
-      app.globalData.smartPlanMeta = {
-        mode,
-        source: parsed.source,
-        labels: parsed.labels || [],
-        preferences: result.preferences
-      }
-      app.setSelectedScreeningIds(result.selectedIds)
-      this.setData({ smartSheetOpen: false }, () => {
-        this.renderSchedule()
-        wx.showToast({
-          title: mode === SMART_MODE_PICK && parsed.source === 'ai' ? 'AI已选片' : getSmartToastTitle(instruction, parsed.source),
-          icon: 'none',
-          duration: 900
-        })
-        setTimeout(() => {
-          wx.switchTab({ url: '/pages/plan/index' })
-        }, 260)
-      })
-    })
   },
 
   openFilm(event) {
@@ -541,15 +385,31 @@ Page({
     const keyword = this.data.query.trim().toLowerCase()
     const directorOptions = countOptions(scopeScreenings, screening => screening.director || '未知导演')
     const cinemaOptions = countOptions(scopeScreenings, screening => screening.cinema || '未知影院', screening => screening.cinema || '未知影院')
+    const sectionOptions = countOptions(scopeScreenings, screening => screening.sectionLabel || '其他')
     const activeDirector = directorOptions.some(item => item.key === this.data.activeDirector) ? this.data.activeDirector : ALL_DIRECTORS
     const activeCinema = cinemaOptions.some(item => item.key === this.data.activeCinema) ? this.data.activeCinema : ALL_CINEMAS
+    const activeSection = sectionOptions.some(item => item.key === this.data.activeSection) ? this.data.activeSection : ALL_SECTIONS
+    const doubanMin = this.data.doubanMin || 0
+    const imdbMin = this.data.imdbMin || 0
     const byDirector = activeDirector === ALL_DIRECTORS
       ? scopeScreenings
       : scopeScreenings.filter(screening => (screening.director || '未知导演') === activeDirector)
     const byCinema = activeCinema === ALL_CINEMAS
       ? byDirector
       : byDirector.filter(screening => (screening.cinema || '未知影院') === activeCinema)
-    const grouped = groupByDay(byCinema)
+    const bySection = activeSection === ALL_SECTIONS
+      ? byCinema
+      : byCinema.filter(screening => (screening.sectionLabel || '其他') === activeSection)
+    const byRating = bySection.filter(screening => {
+      if (doubanMin > 0 && ratingValue(screening.doubanRating) < doubanMin) {
+        return false
+      }
+      if (imdbMin > 0 && ratingValue(screening.imdbRating) < imdbMin) {
+        return false
+      }
+      return true
+    })
+    const grouped = groupByDay(byRating)
     const dayTabs = grouped.map(day => ({
       date: day.date,
       dayLabel: day.dayLabel,
@@ -560,8 +420,9 @@ Page({
       : ALL_DAYS
     const showDayHeaders = activeDay === ALL_DAYS
     const visibleScreenings = showDayHeaders
-      ? byCinema
-      : byCinema.filter(screening => screening.date === activeDay)
+      ? byRating
+      : byRating.filter(screening => screening.date === activeDay)
+    const popularityMap = app.getScreeningPopularityMap(visibleScreenings.map(screening => screening.id))
     const selectedScreeningById = allScreenings.reduce((map, screening) => {
       if (selectedIds.includes(screening.id)) {
         map[screening.id] = screening
@@ -590,22 +451,15 @@ Page({
         const conflict = selected && selectedConflicts.length > 0
         const pickConflict = !selected && selectedConflicts.length > 0
         return {
-          id: screening.id,
-          filmId: screening.filmId,
-          cnTitle: screening.cnTitle,
-          screenMeta: screening.screenMeta,
-          cinema: screening.cinema,
-          hall: screening.hall,
-          date: screening.date,
-          dayLabel: screening.dayLabel,
-          start: screening.start,
-          end: screening.end,
-          price: screening.price,
-          ticket: screening.ticket,
+          ...screening,
           selected,
           filmScheduled,
           interestLabel: screening.interest.label || '未标星',
+          interestWord: ['未标星', '待定', '想看', '必看'][screening.interest.rank] || '未标星',
+          interestStars: screening.interest.shortLabel || '',
           interestTone: screening.interest.label ? screening.interest.tone : 'gray',
+          popularityCount: popularityMap[screening.id] || 0,
+          popularityText: popularityText(popularityMap[screening.id]),
           conflict,
           pickConflict
         }
@@ -616,7 +470,6 @@ Page({
         : scopeScreenings.length
           ? '无结果'
           : '暂无场次'
-    const activeDayTab = dayTabs.find(day => day.date === activeDay)
     const filterChips = [
       {
         key: `scope:${SCOPE_ALL}`,
@@ -630,52 +483,33 @@ Page({
         type: 'scope',
         value: SCOPE_WANTED,
         label: '已标星影片',
-        active: this.data.activeScope === SCOPE_WANTED,
-        dividerAfter: true
-      },
-      {
-        key: 'filter:date',
-        type: 'date',
-        value: activeDay,
-        label: activeDay === ALL_DAYS ? '日期' : `日期·${(activeDayTab && activeDayTab.dayLabel) || activeDay}`,
-        active: activeDay !== ALL_DAYS || this.data.activeFilter === 'date'
-      },
-      {
-        key: 'filter:director',
-        type: 'director',
-        value: activeDirector,
-        label: activeDirector === ALL_DIRECTORS ? '导演' : `导演·${activeDirector}`,
-        active: activeDirector !== ALL_DIRECTORS || this.data.activeFilter === 'director'
-      },
-      {
-        key: 'filter:cinema',
-        type: 'cinema',
-        value: activeCinema,
-        label: activeCinema === ALL_CINEMAS ? '影院' : `影院·${shortCinemaName(activeCinema)}`,
-        active: activeCinema !== ALL_CINEMAS || this.data.activeFilter === 'cinema'
+        active: this.data.activeScope === SCOPE_WANTED
       }
     ]
-    const rawFilterOptions = this.data.activeFilter === 'date'
-      ? [{ key: ALL_DAYS, label: '全部日期', count: byCinema.length }].concat(dayTabs.map(day => ({
-        key: day.date,
-        label: day.dayLabel,
-        count: day.count
-      })))
-      : this.data.activeFilter === 'director'
-        ? [{ key: ALL_DIRECTORS, label: '全部导演', count: scopeScreenings.length }].concat(directorOptions)
-        : this.data.activeFilter === 'cinema'
-          ? [{ key: ALL_CINEMAS, label: '全部影院', count: scopeScreenings.length }].concat(cinemaOptions)
-          : []
-    const activeFilterValue = this.data.activeFilter === 'date'
-      ? activeDay
-      : this.data.activeFilter === 'director'
-        ? activeDirector
-        : this.data.activeFilter === 'cinema'
-          ? activeCinema
-          : ''
-    const filterOptions = rawFilterOptions.map(item => Object.assign({}, item, {
-      picked: item.key === activeFilterValue
+    const dateOptions = [{ key: ALL_DAYS, label: '全部日期', count: byCinema.length }].concat(dayTabs.map(day => ({
+      key: day.date,
+      label: day.dayLabel,
+      count: day.count
+    })))
+    const directorFilterOptions = [{ key: ALL_DIRECTORS, label: '全部导演', count: scopeScreenings.length }].concat(directorOptions)
+    const cinemaFilterOptions = [{ key: ALL_CINEMAS, label: '全部影院', count: scopeScreenings.length }].concat(cinemaOptions)
+    const sectionFilterOptions = [{ key: ALL_SECTIONS, label: '全部单元', count: scopeScreenings.length }].concat(sectionOptions)
+    const markPicked = (options, activeValue) => options.map(item => Object.assign({}, item, {
+      picked: item.key === activeValue
     }))
+    const filterGroups = [
+      { type: 'date', label: '日期', options: markPicked(dateOptions, activeDay) },
+      { type: 'cinema', label: '影院', options: markPicked(cinemaFilterOptions, activeCinema) },
+      { type: 'section', label: '单元', options: markPicked(sectionFilterOptions, activeSection) },
+      { type: 'director', label: '导演', options: markPicked(directorFilterOptions, activeDirector) }
+    ]
+    const filterActiveCount =
+      (activeDay !== ALL_DAYS ? 1 : 0) +
+      (activeCinema !== ALL_CINEMAS ? 1 : 0) +
+      (activeSection !== ALL_SECTIONS ? 1 : 0) +
+      (activeDirector !== ALL_DIRECTORS ? 1 : 0) +
+      (doubanMin > 0 ? 1 : 0) +
+      (imdbMin > 0 ? 1 : 0)
     const screeningGroups = groupByDay(screenings).map(day => {
       const collapsed = showDayHeaders && !!this.data.collapsedDays[day.date]
       return {
@@ -695,9 +529,11 @@ Page({
       festivalName: app.globalData.festivalMeta.name,
       activeDirector,
       activeCinema,
+      activeSection,
       activeDay,
       filterChips,
-      filterOptions,
+      filterGroups,
+      filterActiveCount,
       dayTabs,
       screeningCount: screenings.length,
       screeningGroups: initialGroups,
@@ -708,6 +544,30 @@ Page({
     }, () => {
       if (shouldProgressivelyRender && this._renderToken === renderToken) {
         this.queueDeferredGroups(renderToken, screeningGroups, initialGroups.length)
+      }
+      if (this.data.fieldConfig.popularity) {
+        this.refreshPopularity(screenings.map(screening => screening.id), renderToken)
+      }
+    })
+  },
+
+  refreshPopularity(screeningIds, renderToken) {
+    app.fetchScreeningPopularity(screeningIds).then(counts => {
+      if (this._renderToken !== renderToken) {
+        return
+      }
+      const updates = {}
+      ;(this.data.screeningGroups || []).forEach((group, groupIndex) => {
+        ;(group.items || []).forEach((screening, screeningIndex) => {
+          const count = counts[screening.id] || 0
+          if (screening.popularityCount !== count) {
+            updates[`screeningGroups[${groupIndex}].items[${screeningIndex}].popularityCount`] = count
+            updates[`screeningGroups[${groupIndex}].items[${screeningIndex}].popularityText`] = popularityText(count)
+          }
+        })
+      })
+      if (Object.keys(updates).length) {
+        this.setData(updates)
       }
     })
   }

@@ -7,6 +7,10 @@ const DEFAULT_PREFERENCES = {
   rareBonus: 18,
   avoidMorningBefore: 0,
   avoidLateAfter: 0,
+  targetCount: null,
+  maximizeCount: false,
+  dayPreferences: null,
+  onlyCinemas: [],
   preferredCinemas: [],
   avoidCinemas: [],
   preferredSections: [],
@@ -20,25 +24,13 @@ const SMART_MODE_MARKED = 'schedule_marked'
 const SMART_MODE_PICK = 'pick_and_schedule'
 const DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-const CHINESE_NUMBERS = {
-  零: 0,
-  一: 1,
-  二: 2,
-  两: 2,
-  三: 3,
-  四: 4,
-  五: 5,
-  六: 6,
-  七: 7,
-  八: 8,
-  九: 9,
-  十: 10
-}
-
 function clonePreferences(overrides) {
   const next = Object.assign({}, DEFAULT_PREFERENCES, overrides || {})
   next.busyRules = (next.busyRules || []).map(rule => Object.assign({}, rule))
+  next.targetCount = cleanTargetCount(next.targetCount)
+  next.dayPreferences = cleanDayPreferences(next.dayPreferences)
   ;[
+    'onlyCinemas',
     'preferredCinemas',
     'avoidCinemas',
     'preferredSections',
@@ -52,6 +44,9 @@ function clonePreferences(overrides) {
 }
 
 function clamp(value, min, max) {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
   const number = Number(value)
   if (!Number.isFinite(number)) {
     return null
@@ -65,21 +60,23 @@ function cleanBusyRules(rules) {
   }
 
   return rules
-    .map(rule => {
-      const day = DAYS.includes(rule.day) ? rule.day : ''
+    .reduce((list, rule) => {
+      const days = uniqueDays([]
+        .concat(expandDayValue(rule.day))
+        .concat(expandDayValue(rule.days))
+        .concat(expandDayValue(rule.weekdays)))
       const start = clamp(rule.start, 0, 24 * 60)
       const end = clamp(rule.end, 0, 24 * 60)
-      if (!day || start === null || end === null || end <= start) {
-        return null
+      if (!days.length || start === null || end === null || end <= start) {
+        return list
       }
-      return {
+      return list.concat(days.map(day => ({
         day,
         start,
         end,
         label: String(rule.label || '不可用').slice(0, 18)
-      }
-    })
-    .filter(Boolean)
+      })))
+    }, [])
 }
 
 function cleanStringList(items) {
@@ -101,8 +98,188 @@ function cleanStringList(items) {
     .slice(0, 6)
 }
 
+function normalizeDayValue(value) {
+  const text = String(value || '').trim()
+  if (DAYS.includes(text)) {
+    return text
+  }
+  const number = Number(text)
+  if (Number.isInteger(number)) {
+    if (number >= 1 && number <= 7) {
+      return DAYS[number - 1]
+    }
+  }
+  const lower = text.toLowerCase()
+  const aliases = {
+    monday: '周一',
+    mon: '周一',
+    tuesday: '周二',
+    tue: '周二',
+    wednesday: '周三',
+    wed: '周三',
+    thursday: '周四',
+    thu: '周四',
+    friday: '周五',
+    fri: '周五',
+    saturday: '周六',
+    sat: '周六',
+    sunday: '周日',
+    sun: '周日'
+  }
+  return aliases[lower] || ''
+}
+
+function expandDayValue(value) {
+  if (Array.isArray(value)) {
+    return value.reduce((list, item) => list.concat(expandDayValue(item)), [])
+  }
+  const text = String(value || '').trim()
+  if (/工作日|平日|平常|平时|weekday/i.test(text)) {
+    return DAYS.slice(0, 5)
+  }
+  if (/周末|weekend/i.test(text)) {
+    return DAYS.slice(5)
+  }
+  const day = normalizeDayValue(text)
+  return day ? [day] : []
+}
+
+function uniqueDays(days) {
+  const seen = {}
+  return days
+    .filter(day => DAYS.includes(day))
+    .filter(day => {
+      if (seen[day]) {
+        return false
+      }
+      seen[day] = true
+      return true
+    })
+}
+
+function cleanDayList(items) {
+  if (!Array.isArray(items)) {
+    return []
+  }
+
+  return uniqueDays(items.reduce((list, item) => list.concat(expandDayValue(item)), []))
+}
+
+function cleanDayNumberMap(map, min, max) {
+  if (!map || typeof map !== 'object') {
+    return {}
+  }
+
+  return DAYS.reduce((next, day) => {
+    const value = clamp(map[day], min, max)
+    if (value !== null) {
+      next[day] = value
+    }
+    return next
+  }, {})
+}
+
+function cleanTargetCount(input) {
+  if (typeof input === 'number' || (typeof input === 'string' && input.trim())) {
+    const ideal = clamp(input, 1, 80)
+    return ideal === null ? null : {
+      maximize: false,
+      min: ideal,
+      ideal,
+      max: ideal
+    }
+  }
+  if (!input || typeof input !== 'object') {
+    return null
+  }
+
+  const maximize = !!input.maximize
+  const min = clamp(input.min, 1, 80)
+  const ideal = clamp(input.ideal, 1, 80)
+  const max = clamp(input.max, 1, 80)
+  const values = [min, ideal, max].filter(value => value !== null)
+  if (!maximize && !values.length) {
+    return null
+  }
+
+  const normalized = {
+    maximize
+  }
+  if (values.length) {
+    const low = min !== null ? min : Math.min.apply(null, values)
+    const high = max !== null ? max : Math.max.apply(null, values)
+    const middle = ideal !== null ? ideal : Math.round((low + high) / 2)
+    normalized.min = Math.min(low, middle, high)
+    normalized.ideal = Math.max(normalized.min, Math.min(middle, high))
+    normalized.max = Math.max(normalized.ideal, high)
+  }
+  return normalized
+}
+
+function mergeTargetCount(base, patch) {
+  const a = cleanTargetCount(base)
+  const b = cleanTargetCount(patch)
+  if (!a) {
+    return b
+  }
+  if (!b) {
+    return a
+  }
+  if (a.maximize || b.maximize) {
+    return Object.assign({}, a, b, { maximize: true })
+  }
+  return b
+}
+
+function cleanDayPreferences(input) {
+  if (!input || typeof input !== 'object') {
+    return null
+  }
+
+  const preferredDays = cleanDayList(input.preferredDays)
+  const relaxedDays = cleanDayList(input.relaxedDays)
+  const maxPerDayByDay = cleanDayNumberMap(input.maxPerDayByDay, 1, 8)
+  const minGapByDay = cleanDayNumberMap(input.minGapByDay, 0, 180)
+  if (!preferredDays.length && !relaxedDays.length && !Object.keys(maxPerDayByDay).length && !Object.keys(minGapByDay).length) {
+    return null
+  }
+
+  return {
+    preferredDays,
+    relaxedDays,
+    maxPerDayByDay,
+    minGapByDay
+  }
+}
+
+function mergeDayPreferences(base, patch) {
+  const a = cleanDayPreferences(base) || {}
+  const b = cleanDayPreferences(patch) || {}
+  const merged = {
+    preferredDays: cleanDayList((a.preferredDays || []).concat(b.preferredDays || [])),
+    relaxedDays: cleanDayList((a.relaxedDays || []).concat(b.relaxedDays || [])),
+    maxPerDayByDay: Object.assign({}, a.maxPerDayByDay || {}, b.maxPerDayByDay || {}),
+    minGapByDay: Object.assign({}, a.minGapByDay || {}, b.minGapByDay || {})
+  }
+  return cleanDayPreferences(merged)
+}
+
 function mergeStringList(a, b) {
   return cleanStringList((a || []).concat(b || []))
+}
+
+function mergeBusyRules(base, patch) {
+  const baseRules = cleanBusyRules(base)
+  const patchRules = cleanBusyRules(patch)
+  const seen = {}
+  return baseRules.concat(patchRules).filter(rule => {
+    const key = `${rule.day}:${rule.start}:${rule.end}`
+    if (seen[key]) {
+      return false
+    }
+    seen[key] = true
+    return true
+  })
 }
 
 function mergePreferenceOverrides(base, overrides) {
@@ -110,30 +287,25 @@ function mergePreferenceOverrides(base, overrides) {
   const patch = overrides || {}
 
   ;[
-    ['maxPerDay', 1, 8, 'replace'],
-    ['minGap', 0, 120, 'max'],
-    ['sameCinemaBonus', 0, 80, 'max'],
-    ['cinemaSwitchPenalty', 0, 100, 'max'],
-    ['meetupBonus', 0, 90, 'max'],
-    ['rareBonus', 0, 80, 'max'],
-    ['avoidMorningBefore', 0, 24 * 60, 'max'],
-    ['avoidLateAfter', 0, 24 * 60, 'minNonZero']
-  ].forEach(([key, min, max, mode]) => {
+    ['maxPerDay', 1, 8],
+    ['minGap', 0, 120],
+    ['sameCinemaBonus', 0, 80],
+    ['cinemaSwitchPenalty', 0, 100],
+    ['meetupBonus', 0, 90],
+    ['rareBonus', 0, 80],
+    ['avoidMorningBefore', 0, 24 * 60],
+    ['avoidLateAfter', 0, 24 * 60]
+  ].forEach(([key, min, max]) => {
     if (patch[key] !== undefined && patch[key] !== null) {
       const value = clamp(patch[key], min, max)
       if (value !== null) {
-        if (mode === 'max') {
-          next[key] = Math.max(next[key] || 0, value)
-        } else if (mode === 'minNonZero') {
-          next[key] = next[key] ? Math.min(next[key], value || next[key]) : value
-        } else {
-          next[key] = value
-        }
+        next[key] = value
       }
     }
   })
 
   ;[
+    'onlyCinemas',
     'preferredCinemas',
     'avoidCinemas',
     'preferredSections',
@@ -144,8 +316,26 @@ function mergePreferenceOverrides(base, overrides) {
     next[key] = mergeStringList(next[key], patch[key])
   })
 
+  if (patch.targetCount !== undefined) {
+    next.targetCount = mergeTargetCount(next.targetCount, patch.targetCount)
+    if (next.targetCount && next.targetCount.maximize) {
+      next.maximizeCount = true
+    }
+  }
+
+  if (patch.maximizeCount !== undefined) {
+    next.maximizeCount = !!(next.maximizeCount || patch.maximizeCount)
+    if (next.maximizeCount && !next.targetCount) {
+      next.targetCount = { maximize: true }
+    }
+  }
+
+  if (patch.dayPreferences !== undefined) {
+    next.dayPreferences = mergeDayPreferences(next.dayPreferences, patch.dayPreferences)
+  }
+
   if (patch.busyRules !== undefined) {
-    const busyRules = cleanBusyRules(patch.busyRules)
+    const busyRules = mergeBusyRules(next.busyRules, patch.busyRules)
     if (busyRules.length) {
       next.busyRules = busyRules
     }
@@ -154,168 +344,9 @@ function mergePreferenceOverrides(base, overrides) {
   return next
 }
 
-function parseChineseHour(value) {
-  const text = String(value || '').trim()
-  if (/^\d+$/.test(text)) {
-    return Number(text)
-  }
-
-  if (text === '十') {
-    return 10
-  }
-
-  if (text.startsWith('十')) {
-    return 10 + (CHINESE_NUMBERS[text.slice(1)] || 0)
-  }
-
-  if (text.includes('十')) {
-    const parts = text.split('十')
-    return (CHINESE_NUMBERS[parts[0]] || 0) * 10 + (CHINESE_NUMBERS[parts[1]] || 0)
-  }
-
-  return CHINESE_NUMBERS[text]
-}
-
-function normalizeHour(hour, role, startHour, phrase) {
-  if (typeof hour !== 'number' || Number.isNaN(hour)) {
-    return null
-  }
-
-  const text = phrase || ''
-  const shouldUsePm = /下午|晚上|下班/.test(text)
-  if (shouldUsePm && hour < 12) {
-    return hour + 12
-  }
-
-  if (role === 'end' && typeof startHour === 'number' && hour <= startHour && hour <= 8) {
-    return hour + 12
-  }
-
-  return hour
-}
-
-function minutesFromHour(hour) {
-  return hour * 60
-}
-
-function addBusyRule(preferences, days, start, end, label) {
-  days.forEach(day => {
-    preferences.busyRules.push({ day, start, end, label })
-  })
-}
-
-function removeBusyRulesForDay(preferences, day) {
-  preferences.busyRules = preferences.busyRules.filter(rule => rule.day !== day)
-}
-
-function parseRange(text) {
-  const match = text.match(/([零一二两三四五六七八九十\d]{1,3})(?:点|:00)?\s*(?:到|至|-)\s*([零一二两三四五六七八九十\d]{1,3})(?:点|:00)?/)
-  if (!match) {
-    return null
-  }
-
-  const rawStart = parseChineseHour(match[1])
-  const startHour = normalizeHour(rawStart, 'start', null, match[0])
-  const rawEnd = parseChineseHour(match[2])
-  const endHour = normalizeHour(rawEnd, 'end', startHour, match[0])
-  if (startHour === null || endHour === null) {
-    return null
-  }
-
-  return {
-    start: minutesFromHour(startHour),
-    end: minutesFromHour(endHour)
-  }
-}
-
 function parsePreferenceInstruction(instruction) {
-  const text = String(instruction || '').trim()
-  const preferences = clonePreferences()
-  const labels = []
-
-  if (!text) {
-    return {
-      preferences,
-      labels: ['默认脚本']
-    }
-  }
-
-  const workdayRange = /工作日/.test(text) ? parseRange(text) : null
-  if (workdayRange && /没空|不能|不行|上班/.test(text)) {
-    addBusyRule(preferences, ['周一', '周二', '周三', '周四', '周五'], workdayRange.start, workdayRange.end, '工作日不可用')
-    labels.push('避开工作日占用')
-  }
-
-  const fridayLeave = text.match(/周五.*?([零一二两三四五六七八九十\d]{1,3})(?:点|:00)?.*?下班/)
-  if (fridayLeave) {
-    const rawHour = parseChineseHour(fridayLeave[1])
-    const endHour = normalizeHour(rawHour, 'end', 10, fridayLeave[0])
-    if (endHour !== null) {
-      removeBusyRulesForDay(preferences, '周五')
-      addBusyRule(preferences, ['周五'], workdayRange ? workdayRange.start : minutesFromHour(10), minutesFromHour(endHour), '周五下班前不可用')
-      labels.push(`周五${endHour}点后可用`)
-    }
-  }
-
-  const maxMatch = text.match(/(?:每天|一天).*?(?:最多|不超过)\s*([一二两三四五六七八九十\d])\s*场/)
-  if (maxMatch) {
-    const max = parseChineseHour(maxMatch[1])
-    if (max) {
-      preferences.maxPerDay = max
-      labels.push(`每天最多${max}场`)
-    }
-  }
-
-  if (/少跑|少换|少赶|同影院|不要折腾/.test(text)) {
-    preferences.sameCinemaBonus = 42
-    preferences.cinemaSwitchPenalty = 38
-    preferences.minGap = Math.max(preferences.minGap, 30)
-    labels.push('少换影院')
-  }
-
-  if (/极限|多看|尽量多/.test(text)) {
-    preferences.maxPerDay = Math.max(preferences.maxPerDay, 5)
-    preferences.minGap = 10
-    labels.push('多看片')
-  }
-
-  if (/不想早起|不要太早|早场少/.test(text)) {
-    preferences.avoidMorningBefore = minutesFromHour(11)
-    labels.push('少早场')
-  }
-
-  if (/不要太晚|别太晚|晚上少/.test(text)) {
-    preferences.avoidLateAfter = minutesFromHour(21)
-    labels.push('少晚场')
-  }
-
-  if (/见面场|映后|主创/.test(text)) {
-    preferences.meetupBonus = 40
-    labels.push('见面场优先')
-  }
-
-  ;[
-    '资料馆',
-    '英皇',
-    '北京剧院',
-    '卢米埃',
-    '中间影院',
-    '百老汇',
-    '万达',
-    '天幕',
-    '耀莱',
-    'UME',
-    '深影'
-  ].forEach(cinema => {
-    if (text.includes(cinema)) {
-      preferences.preferredCinemas.push(cinema)
-      labels.push(`偏好${cinema}`)
-    }
-  })
-
   return {
-    preferences,
-    labels: labels.length ? labels : ['已解析偏好']
+    preferences: clonePreferences()
   }
 }
 
@@ -349,6 +380,59 @@ function includesAny(text, words) {
   return (words || []).some(word => text.includes(word))
 }
 
+function getScreeningDay(screening) {
+  return DAYS.find(day => String(screening.dayLabel || '').includes(day)) || ''
+}
+
+function parseScreeningDate(date) {
+  const match = String(date || '').match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
+  if (!match) {
+    return null
+  }
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null
+  }
+  return { year, month, day }
+}
+
+function parseTimeMinutes(time) {
+  const match = String(time || '').match(/^(\d{1,2}):(\d{1,2})$/)
+  if (!match) {
+    return null
+  }
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null
+  }
+  return hour * 60 + minute
+}
+
+function screeningStartTimestamp(screening) {
+  const date = parseScreeningDate(screening && screening.date)
+  if (!date) {
+    return null
+  }
+  const start = Number.isFinite(Number(screening.startMinutes))
+    ? Number(screening.startMinutes)
+    : parseTimeMinutes(screening.start)
+  if (!Number.isFinite(start)) {
+    return null
+  }
+  return new Date(date.year, date.month - 1, date.day, Math.floor(start / 60), start % 60).getTime()
+}
+
+function isFutureScreening(screening, nowMs) {
+  const startTime = screeningStartTimestamp(screening)
+  if (startTime === null) {
+    return true
+  }
+  return startTime > nowMs
+}
+
 function isBusy(screening, preferences) {
   return preferences.busyRules.some(rule => {
     return screening.dayLabel.includes(rule.day) && screening.startMinutes < rule.end && screening.endMinutes > rule.start
@@ -363,7 +447,13 @@ function isCompatible(candidate, selected, preferences) {
     const gap = candidate.startMinutes >= item.endMinutes
       ? candidate.startMinutes - item.endMinutes
       : item.startMinutes - candidate.endMinutes
-    return gap >= preferences.minGap
+    const dayPreferences = preferences.dayPreferences || {}
+    const minGapByDay = dayPreferences.minGapByDay || {}
+    const candidateDay = getScreeningDay(candidate)
+    const itemDay = getScreeningDay(item)
+    const dayGap = candidateDay && candidateDay === itemDay ? minGapByDay[candidateDay] || 0 : 0
+    const relaxedGap = (dayPreferences.relaxedDays || []).includes(candidateDay) ? 60 : 0
+    return gap >= Math.max(preferences.minGap, dayGap, relaxedGap)
   })
 }
 
@@ -391,7 +481,10 @@ function baseScore(screening, filmCounts, preferences, options) {
   const avoidSection = includesAny(screening.section || '', preferences.avoidSections) ? -72 : 0
   const preferredKeyword = includesAny(text, preferences.preferredKeywords) ? 36 : 0
   const avoidKeyword = includesAny(text, preferences.avoidKeywords) ? -54 : 0
-  return rankScore + pickScore + rare + meetup + morningPenalty + latePenalty + preferredCinema + avoidCinema + preferredSection + avoidSection + preferredKeyword + avoidKeyword
+  const dayPreferences = preferences.dayPreferences || {}
+  const day = getScreeningDay(screening)
+  const preferredDay = (dayPreferences.preferredDays || []).includes(day) ? 42 : 0
+  return rankScore + pickScore + rare + meetup + morningPenalty + latePenalty + preferredCinema + avoidCinema + preferredSection + avoidSection + preferredKeyword + avoidKeyword + preferredDay
 }
 
 function dynamicScore(screening, selected, filmCounts, preferences, options) {
@@ -458,23 +551,32 @@ function normalizeFilmWeights(weights) {
 
 function buildSmartPlan(screenings, preferencesInput, optionsInput) {
   const preferences = clonePreferences(preferencesInput)
-  const filmCounts = countScreeningsByFilm(screenings)
   const options = Object.assign({}, optionsInput || {}, {
     mode: normalizeMode(optionsInput && optionsInput.mode),
     selectedFilmIds: normalizeSelectedFilmIds(optionsInput && optionsInput.selectedFilmIds),
     filmWeights: normalizeFilmWeights(optionsInput && optionsInput.filmWeights)
   })
+  const nowMs = Number.isFinite(Number(optionsInput && optionsInput.nowMs))
+    ? Number(optionsInput.nowMs)
+    : Date.now()
+  const futureScreenings = screenings.filter(screening => isFutureScreening(screening, nowMs))
+  const filmCounts = countScreeningsByFilm(futureScreenings)
   const pickedFilmIds = options.selectedFilmIds.reduce((map, id) => {
     map[id] = true
     return map
   }, {})
-  const candidates = screenings
+  const targetCount = cleanTargetCount(preferences.targetCount)
+  const targetMax = targetCount && !targetCount.maximize && targetCount.max ? targetCount.max : 0
+  const dayPreferences = preferences.dayPreferences || {}
+  const maxPerDayByDay = dayPreferences.maxPerDayByDay || {}
+  const candidates = futureScreenings
     .filter(screening => {
       if (options.mode === SMART_MODE_PICK) {
         return !options.selectedFilmIds.length || pickedFilmIds[screening.filmId]
       }
       return screening.interest.rank > 0
     })
+    .filter(screening => !preferences.onlyCinemas.length || includesAny(screening.cinema || '', preferences.onlyCinemas))
     .filter(screening => !isBusy(screening, preferences))
     .map(screening => Object.assign({}, screening, {
       smartBaseScore: baseScore(screening, filmCounts, preferences, options)
@@ -490,10 +592,15 @@ function buildSmartPlan(screenings, preferencesInput, optionsInput) {
     let bestScore = -Infinity
 
     remaining.forEach(candidate => {
+      const day = getScreeningDay(candidate)
+      const dayCap = maxPerDayByDay[day] || preferences.maxPerDay
       if (selectedFilmIds[candidate.filmId]) {
         return
       }
-      if ((dayCounts[candidate.date] || 0) >= preferences.maxPerDay) {
+      if (targetMax && selected.length >= targetMax) {
+        return
+      }
+      if ((dayCounts[candidate.date] || 0) >= dayCap) {
         return
       }
       if (!isCompatible(candidate, selected, preferences)) {
@@ -515,6 +622,9 @@ function buildSmartPlan(screenings, preferencesInput, optionsInput) {
     selectedFilmIds[best.filmId] = true
     dayCounts[best.date] = (dayCounts[best.date] || 0) + 1
     remaining = remaining.filter(candidate => candidate.id !== best.id && candidate.filmId !== best.filmId)
+    if (targetMax && selected.length >= targetMax) {
+      break
+    }
   }
 
   return {
