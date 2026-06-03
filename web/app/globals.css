@@ -1734,14 +1734,6 @@ a {
   box-shadow: 0 1px 0 rgba(22, 23, 22, 0.08);
 }
 
-.poster-preview-actions {
-  display: grid;
-  grid-template-columns: 75px minmax(0, 1fr);
-  gap: 7px;
-  flex: 0 0 auto;
-  padding: 0 14px 14px;
-}
-
 .smart-mask,
 .import-mask {
   position: fixed;

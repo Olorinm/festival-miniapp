@@ -847,14 +847,6 @@ function createPlanPosterImage(plan, options) {
   }
 }
 
-function downloadPosterImage(image) {
-  if (!image || typeof document === 'undefined') return
-  const link = document.createElement('a')
-  link.href = image.url
-  link.download = image.filename || 'festival-plan.png'
-  link.click()
-}
-
 function Spark({ small = false, spinning = false, primary = false }) {
   const className = [
     primary ? 'smart-primary-spark' : 'smart-icon',
@@ -1772,7 +1764,7 @@ function PosterSheet({ open, theme, setTheme, summary, onClose, onConfirm }) {
   )
 }
 
-function ImagePreview({ image, title = '图片预览', hint = '长按图片保存', onClose, onDownload }) {
+function ImagePreview({ image, title = '图片预览', hint = '长按图片保存', onClose }) {
   if (!image) return null
   return (
     <div className="poster-preview-mask" onClick={onClose}>
@@ -1786,10 +1778,6 @@ function ImagePreview({ image, title = '图片预览', hint = '长按图片保�
         </div>
         <div className="poster-preview-scroll">
           <img className="poster-preview-image" src={image.url} alt={image.alt || title} />
-        </div>
-        <div className="poster-preview-actions">
-          <button className="poster-secondary" type="button" onClick={onClose}>关闭</button>
-          {onDownload ? <button className="poster-primary" type="button" onClick={onDownload}>下载图片</button> : null}
         </div>
       </div>
     </div>
@@ -2546,9 +2534,8 @@ export default function FestivalWebApp() {
       <ImagePreview
         image={posterPreview}
         title="长图已生成"
-        hint="长按图片保存，或点下载图片"
+        hint="长按图片保存"
         onClose={() => setPosterPreview(null)}
-        onDownload={() => downloadPosterImage(posterPreview)}
       />
       <ImagePreview image={imagePreview} title="交流群" hint="长按二维码识别加入" onClose={() => setImagePreview(null)} />
       <ImportDialog mode={importMode} text={importText} onText={setImportText} onClose={() => setImportMode('')} onImport={importPlan} onCopy={copyExport} />
