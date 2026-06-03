@@ -32,9 +32,18 @@ node_modules/
 project.private.config.json
 project.local.config.json
 
-# Generated offline assets
+# Local data caches and raw downloaded assets
 cloud-data/douban/
+cloud-data/douban*/
 cloud-data/tmdb/
+cloud-data/tmdb*/
+cloud-data/**/doulist-items-cache.json
+cloud-data/**/siff2026-synopsis-cache.json
+cloud-data/**/films-with-posters.json
+cloud-data/**/download-report.json
+cloud-data/**/covers/
+
+# Generated offline assets
 miniprogram/assets/posters/
 article/
 
