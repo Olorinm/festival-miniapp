@@ -336,6 +336,28 @@ function getAnonUserId() {
   return value
 }
 
+function trackUsageEvent(event, festivalId) {
+  if (typeof window === 'undefined') return
+  const payload = JSON.stringify({
+    event,
+    festivalId: festivalId || 'siff2026'
+  })
+  try {
+    if (window.navigator && typeof window.navigator.sendBeacon === 'function') {
+      const blob = new Blob([payload], { type: 'application/json' })
+      if (window.navigator.sendBeacon('/api/events/track', blob)) {
+        return
+      }
+    }
+  } catch (error) {}
+  fetch('/api/events/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true
+  }).catch(() => {})
+}
+
 function posterSrc(film) {
   const asset = String(film.posterAssetPath || '').trim()
   if (asset) return asset.replace(/^\/assets\/posters\//, '/posters/')
@@ -2092,6 +2114,7 @@ export default function FestivalWebApp() {
     if (typeof window !== 'undefined') {
       scrollPositionsRef.current[tab] = window.scrollY || 0
     }
+    trackUsageEvent(`tab_${nextTab}`, festivalName)
     setTab(nextTab)
     if (typeof window !== 'undefined') {
       window.requestAnimationFrame(() => {
@@ -2145,6 +2168,10 @@ export default function FestivalWebApp() {
   }, [])
 
   useEffect(() => {
+    trackUsageEvent('app_open', festivalName)
+  }, [festivalName])
+
+  useEffect(() => {
     if (scheduleFieldConfig.popularity === false) {
       setPopularity({})
       fetch('/api/popularity/sync', {
@@ -2190,10 +2217,12 @@ export default function FestivalWebApp() {
     if (!screening) return
     const selected = selectedIds.includes(id)
     if (selected) {
+      trackUsageEvent('unselect_screening', festivalName)
       setActiveSelectedIds(selectedIds.filter(item => item !== id), null)
       showToast('已移除', 1000)
       return
     }
+    trackUsageEvent('select_screening', festivalName)
     const sameFilmSelectedIds = allScreenings
       .filter(item => item.filmId === screening.filmId && selectedIds.includes(item.id))
       .map(item => item.id)
@@ -2214,6 +2243,7 @@ export default function FestivalWebApp() {
   }
 
   const setMark = (filmId, mark) => {
+    trackUsageEvent(mark ? 'mark_film' : 'unmark_film', festivalName)
     setMarks(prev => {
       const next = { ...(prev || {}) }
       if (mark) next[filmId] = mark
@@ -2274,6 +2304,7 @@ export default function FestivalWebApp() {
   const runSmartPlan = async instruction => {
     const value = instruction.trim()
     if (!value) return
+    trackUsageEvent('smart_submit', festivalName)
     const timers = []
     setSmartLoading(true)
     setSmartError('')
@@ -2300,8 +2331,10 @@ export default function FestivalWebApp() {
         createdAt: Date.now()
       })
       setSmartOpen(false)
+      trackUsageEvent('smart_success', festivalName)
       switchTab('plan')
     } catch (error) {
+      trackUsageEvent('smart_error', festivalName)
       setSmartError(String(error?.message || error || 'AI 生成失败'))
     } finally {
       timers.forEach(timer => window.clearTimeout(timer))
@@ -2312,7 +2345,31 @@ export default function FestivalWebApp() {
 
   const openFilm = filmOrId => {
     const film = typeof filmOrId === 'string' ? filmMap[filmOrId] : filmOrId
-    if (film) setDetailFilm(film)
+    if (film) {
+      trackUsageEvent('film_detail_open', festivalName)
+      setDetailFilm(film)
+    }
+  }
+
+  const openSmart = () => {
+    trackUsageEvent('smart_open', festivalName)
+    setSmartOpen(true)
+  }
+
+  const openAbout = () => {
+    trackUsageEvent('about_open', festivalName)
+    setAboutOpen(true)
+  }
+
+  const openImport = () => {
+    trackUsageEvent('import_open', festivalName)
+    setImportText('')
+    setImportMode('import')
+  }
+
+  const openCommunityQr = () => {
+    trackUsageEvent('community_open', festivalName)
+    setImagePreview({ url: '/community/wechat-feedback-group.jpg', alt: '赶场愉快反馈群二维码' })
   }
 
   const exportPayload = {
@@ -2330,10 +2387,12 @@ export default function FestivalWebApp() {
       showToast('先加入场次')
       return
     }
+    trackUsageEvent('export_open', festivalName)
     setExportSheetOpen(true)
   }
 
   const openTextExport = async () => {
+    trackUsageEvent('export_text', festivalName)
     setExportSheetOpen(false)
     const text = formatPlanText(plan, {
       festivalName,
@@ -2349,6 +2408,7 @@ export default function FestivalWebApp() {
   }
 
   const openPosterExport = () => {
+    trackUsageEvent('export_poster', festivalName)
     setExportSheetOpen(false)
     setPosterSheetOpen(true)
   }
@@ -2375,6 +2435,7 @@ export default function FestivalWebApp() {
         setSchemes(prev => (Array.isArray(prev) ? prev : []).concat(scheme))
         setActiveSchemeId(scheme.id)
         setImportMode('')
+        trackUsageEvent('import_success', festivalName)
         switchTab('plan')
         return
       }
@@ -2391,6 +2452,7 @@ export default function FestivalWebApp() {
       setActiveSchemeId(payload.activeSchemeId || nextSchemes[0]?.id || DEFAULT_SCHEME_ID)
       setMarks(payload.marks && typeof payload.marks === 'object' ? payload.marks : {})
       setImportMode('')
+      trackUsageEvent('import_success', festivalName)
       switchTab('plan')
     } catch (error) {
       showToast(error.message || '导入失败')
@@ -2416,8 +2478,8 @@ export default function FestivalWebApp() {
           setFieldConfig={setFilmFieldConfig}
           query={query}
           setQuery={setQuery}
-          onAbout={() => setAboutOpen(true)}
-          openSmart={() => setSmartOpen(true)}
+          onAbout={openAbout}
+          openSmart={openSmart}
           openFilm={openFilm}
           setMark={setMark}
         />
@@ -2431,8 +2493,8 @@ export default function FestivalWebApp() {
           setFieldConfig={setScheduleFieldConfig}
           query={query}
           setQuery={setQuery}
-          onAbout={() => setAboutOpen(true)}
-          openSmart={() => setSmartOpen(true)}
+          onAbout={openAbout}
+          openSmart={openSmart}
           onToggle={toggleScreening}
           openFilm={openFilm}
           popularity={popularity}
@@ -2448,9 +2510,9 @@ export default function FestivalWebApp() {
           renameScheme={renameScheme}
           deleteScheme={deleteScheme}
           plan={plan}
-          onAbout={() => setAboutOpen(true)}
-          openSmart={() => setSmartOpen(true)}
-          openImport={() => { setImportText(''); setImportMode('import') }}
+          onAbout={openAbout}
+          openSmart={openSmart}
+          openImport={openImport}
           openExport={openExport}
           removeScreening={toggleScreening}
           openFilm={openFilm}
@@ -2506,7 +2568,7 @@ export default function FestivalWebApp() {
           festivalName={festivalName}
           onClose={() => setAboutOpen(false)}
           onToast={showToast}
-          onPreviewQr={() => setImagePreview({ url: '/community/wechat-feedback-group.jpg', alt: '赶场愉快反馈群二维码' })}
+          onPreviewQr={openCommunityQr}
         />
       ) : null}
       <SchemeRenameDialog
