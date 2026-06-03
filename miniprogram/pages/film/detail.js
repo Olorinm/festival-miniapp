@@ -1,7 +1,8 @@
 const {
   buildScreenings,
-  compactMeta,
   filmCoreMeta,
+  filmAwards,
+  filmCast,
   filmDirector,
   filmDisplayTitle,
   filmEnTitle,
@@ -10,7 +11,6 @@ const {
   filmRatingItems,
   filmRuntimeMinutes,
   filmSection,
-  formatRatingCount,
   findConflicts,
   findFilm,
   getInterestMeta,
@@ -19,16 +19,40 @@ const {
 
 const app = getApp()
 
-function infoRow(label, value) {
+function infoRow(label, value, options) {
   const text = String(value || '').trim()
-  return text ? { label, value: text } : null
+  const rowOptions = options || {}
+  const lines = rowOptions.multiline
+    ? text.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+    : []
+  return text ? { label, value: text, multiline: !!rowOptions.multiline, lines } : null
 }
 
 function buildInfoRows(film) {
   const rows = [
-    infoRow('豆瓣评分人数', formatRatingCount(film.doubanRatingCount))
+    infoRow('获奖情况', filmAwards(film), { multiline: true })
   ]
   return rows.filter(Boolean)
+}
+
+function slashMeta(items) {
+  return items
+    .map(item => String(item || '').trim().replace(/\s+·\s+/g, ' / '))
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function buildHeadMetaRows(film) {
+  const meta = slashMeta([
+    filmCoreMeta(film),
+    filmDirector(film),
+    filmCast(film)
+  ])
+  return meta ? [meta] : []
+}
+
+function filmSynopsis(film) {
+  return String(film.synopsis || film.tmdbOverview || film.overview || '').trim()
 }
 
 function popularityText(count) {
@@ -105,6 +129,7 @@ Page({
     const genre = filmGenre(rawFilm)
     const ratingItems = filmRatingItems(rawFilm)
     const infoRows = buildInfoRows(rawFilm)
+    const headMetaRows = buildHeadMetaRows(rawFilm)
     const posterSrc = filmPosterSrc(rawFilm)
     const popularityMap = app.getScreeningPopularityMap((rawFilm.screenings || []).map(screening => screening.id))
     const allScreenings = buildScreenings(app.globalData.films, marks)
@@ -135,9 +160,9 @@ Page({
         runtimeLabel: runtimeText(runtime),
         posterSrc,
         hasPoster: !!posterSrc,
-        primaryMeta: compactMeta([filmCoreMeta(rawFilm), filmDirector(rawFilm)]),
-        directorLine: filmDirector(rawFilm),
+        headMetaRows,
         recommendation: rawFilm.recommendation || rawFilm.doulistComment || '',
+        synopsis: filmSynopsis(rawFilm),
         detailTags: [section, genre].filter(Boolean),
         ratingItems,
         infoRows,

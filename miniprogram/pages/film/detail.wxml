@@ -7,7 +7,9 @@
     <view class="head-main">
       <view class="film-title">{{film.cnTitle}}</view>
       <view wx:if="{{film.enTitle}}" class="film-en">{{film.enTitle}}</view>
-      <view wx:if="{{film.primaryMeta}}" class="film-meta">{{film.primaryMeta}}</view>
+      <view wx:if="{{film.headMetaRows.length}}" class="film-meta">
+        <view wx:for="{{film.headMetaRows}}" wx:key="*this" class="film-meta-line">{{item}}</view>
+      </view>
       <view wx:if="{{film.detailTags.length}}" class="detail-fact-row">
         <text wx:for="{{film.detailTags}}" wx:key="*this" class="detail-tag">{{item}}</text>
       </view>
@@ -15,6 +17,7 @@
         <view wx:for="{{film.ratingItems}}" wx:key="key" class="rating-item rating-{{item.key}}">
           <text class="rating-label">{{item.label}}</text>
           <text class="rating-value">{{item.value}}</text>
+          <text wx:if="{{item.extra}}" class="rating-extra">{{item.extra}}</text>
         </view>
       </view>
     </view>
@@ -25,11 +28,19 @@
     <view class="recommendation">{{film.recommendation}}</view>
   </view>
 
+  <view wx:if="{{film.synopsis}}" class="recommendation-block synopsis-block">
+    <view class="info-title">剧情简介</view>
+    <view class="recommendation">{{film.synopsis}}</view>
+  </view>
+
   <view wx:if="{{film.hasInfoRows}}" class="section info-section">
     <view wx:if="{{film.hasInfoRows}}" class="info-list">
-      <view wx:for="{{film.infoRows}}" wx:key="label" class="info-row">
+      <view wx:for="{{film.infoRows}}" wx:key="label" class="info-row {{item.multiline ? 'is-multiline' : ''}}">
         <text class="info-label">{{item.label}}</text>
-        <text class="info-value">{{item.value}}</text>
+        <view wx:if="{{item.multiline}}" class="info-value info-value-long">
+          <text wx:for="{{item.lines}}" wx:key="*this" class="info-value-line">{{item}}</text>
+        </view>
+        <text wx:else class="info-value">{{item.value}}</text>
       </view>
     </view>
   </view>

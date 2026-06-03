@@ -23,3 +23,11 @@ node scripts/fetch-doulist-posters.mjs --doulist 163945180
 ```
 
 该脚本用于离线从豆列拉取轻量海报并生成 manifest。
+
+补 TMDB 剧情简介：
+
+```bash
+TMDB_API_TOKEN=YOUR_TMDB_API_TOKEN node scripts/fetch-tmdb-synopses.mjs
+```
+
+脚本会优先用 IMDb ID 匹配 TMDB，语言顺序默认为 `zh-CN,zh-TW,en-US`，并把结果写入 `synopsis`、`tmdbId`、`synopsisSource` 等字段。可先用 `--dry-run --limit 10` 试跑。

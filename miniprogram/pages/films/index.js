@@ -1,6 +1,5 @@
 const {
   collectStats,
-  compactMeta,
   filmCoreMeta,
   filmCountry,
   filmDirector,
@@ -13,7 +12,8 @@ const {
   filmSection,
   filmYear,
   getInterestMeta,
-  runtimeText
+  runtimeText,
+  slashMeta
 } = require('../../utils/schedule')
 const { getNavMetrics } = require('../../utils/nav')
 
@@ -577,7 +577,7 @@ Page({
         sectionLabel: section,
         ratingSummary,
         runtimeLabel: runtimeText(runtime),
-        metaText: compactMeta([filmCoreMeta(film), director]),
+        metaText: slashMeta([filmCoreMeta(film), director]),
         searchText
       }
     }).filter(film => {

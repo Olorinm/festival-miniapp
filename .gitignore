@@ -12,11 +12,16 @@ $RECYCLE.BIN/
 
 # Node.js
 node_modules/
+.next/
+**/.next/
+.vercel/
+**/.vercel/
 
 # Local env / secrets
 .env
 .env.*
 !.env.example
+!**/.env.example
 *.local
 *.secret
 *.key
@@ -29,5 +34,10 @@ project.local.config.json
 
 # Generated offline assets
 cloud-data/douban/
+cloud-data/tmdb/
 miniprogram/assets/posters/
 article/
+
+# Local review / scratch artifacts
+web-review-screenshots/
+skill-translations.html

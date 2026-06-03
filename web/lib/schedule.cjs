@@ -1,4 +1,4 @@
-const { interestOptions: fallbackInterestOptions } = require('../data/festival')
+const { interestOptions: fallbackInterestOptions } = require('./festival')
 
 const noInterest = {
   key: 'none',
@@ -59,7 +59,7 @@ function buildScreenings(films, marks) {
           year: filmYear(film),
           runtime: filmRuntimeMinutes(film),
           posterSrc: filmPosterSrc(film),
-          cardMeta: slashMeta([filmCoreMeta(film), filmDirector(film)]),
+          cardMeta: compactMeta([filmCoreMeta(film), filmDirector(film)]),
           sectionLabel: filmSection(film),
           ratingSummary: filmRatingSummary(film),
           doubanRating: film.doubanRating,
@@ -96,13 +96,6 @@ function compactMeta(items) {
     .map(item => String(item || '').trim())
     .filter(Boolean)
     .join(' · ')
-}
-
-function slashMeta(items) {
-  return items
-    .map(item => String(item || '').trim().replace(/\s+·\s+/g, ' / '))
-    .filter(Boolean)
-    .join(' / ')
 }
 
 function firstText(items) {
@@ -386,6 +379,5 @@ module.exports = {
   formatRatingCount,
   getInterestMeta,
   groupByDay,
-  slashMeta,
   runtimeText
 }
