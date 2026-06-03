@@ -350,10 +350,14 @@
 
 .film-list {
   display: block;
+  min-width: 0;
+  width: 100%;
 }
 
 .film-group {
   display: block;
+  min-width: 0;
+  width: 100%;
 }
 
 .film-group + .film-group {
@@ -365,6 +369,8 @@
   top: 0;
   z-index: 12;
   display: block;
+  min-width: 0;
+  width: 100%;
   min-height: 64rpx;
   margin: 0 -2rpx 18rpx;
   padding: 0 148rpx 0 0;
@@ -448,9 +454,13 @@
   display: flex;
   flex-direction: column;
   gap: 28rpx;
+  min-width: 0;
+  width: 100%;
 }
 
 .film-card {
+  min-width: 0;
+  width: 100%;
   padding: 28rpx 24rpx 28rpx 28rpx;
   border: 1rpx solid #f0f0ec;
   border-radius: 16rpx;
@@ -461,6 +471,7 @@
   display: flex;
   align-items: center;
   gap: 18rpx;
+  min-width: 0;
   min-height: 192rpx;
 }
 

@@ -619,12 +619,16 @@ a {
 .film-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  width: 100%;
   margin-top: 12px;
 }
 
 .film-group {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .film-group + .film-group {
@@ -635,6 +639,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
+  width: 100%;
   min-height: 26px;
   padding: 0 2px;
   border-bottom: 1px solid #ebeae6;
@@ -670,9 +676,13 @@ a {
 .group-list {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  width: 100%;
 }
 
 .film-card {
+  min-width: 0;
+  width: 100%;
   padding: 14px 12px 14px 14px;
   border: 1px solid #f0f0ec;
   border-radius: 8px;
@@ -683,6 +693,7 @@ a {
   display: flex;
   gap: 9px;
   align-items: center;
+  min-width: 0;
   min-height: 96px;
 }
 
