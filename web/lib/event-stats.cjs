@@ -1,4 +1,5 @@
 const { Redis } = require('@upstash/redis')
+const crypto = require('crypto')
 
 const EVENT_NAMES = [
   'app_open',
@@ -47,6 +48,21 @@ function getRedis() {
 
 function normalizeFestivalId(value) {
   return String(value || 'siff2026').replace(/[^\w.-]/g, '_').slice(0, 64)
+}
+
+function summaryToken() {
+  return String(process.env.EVENTS_SUMMARY_TOKEN || '').trim()
+}
+
+function isSummaryAuthorized(value) {
+  const expected = summaryToken()
+  const actual = String(value || '').trim()
+  if (!expected || !actual) {
+    return false
+  }
+  const expectedBuffer = Buffer.from(expected)
+  const actualBuffer = Buffer.from(actual)
+  return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer)
 }
 
 function normalizeEventName(value) {
@@ -163,5 +179,6 @@ async function getEventSummary(payload) {
 module.exports = {
   EVENT_NAMES,
   getEventSummary,
+  isSummaryAuthorized,
   trackEvent
 }

@@ -1,5 +1,5 @@
 import './globals.css'
-import { Analytics } from '@vercel/analytics/next'
+import Analytics from './analytics'
 
 export const metadata = {
   title: '赶场愉快 SIFF 2026',
