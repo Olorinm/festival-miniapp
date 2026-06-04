@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react'
 import festival from '../lib/festival'
 import schedule from '../lib/schedule.cjs'
 
@@ -18,13 +19,15 @@ const STAR_SLOTS = [
 const DEFAULT_SCHEME_ID = 'plan_default'
 const DEFAULT_FILM_FIELD_CONFIG = {
   info: true,
-  rating: true
+  rating: true,
+  synopsis: false
 }
 const DEFAULT_SCHEDULE_FIELD_CONFIG = {
   info: true,
   rating: false,
   ticket: true,
-  popularity: true
+  popularity: true,
+  synopsis: false
 }
 const DEFAULT_SORT = 'section'
 const SORT_OPTIONS = [
@@ -41,6 +44,7 @@ const POSTER_WIDTH = 750
 const POSTER_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif'
 const APP_SHARE_NAME = '赶场愉快'
 const GITHUB_URL = 'https://github.com/Olorinm/festival-miniapp'
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const POSTER_THEMES = [
   {
     key: 'list',
@@ -141,15 +145,29 @@ function safeWrite(key, value) {
 }
 
 function useStoredState(key, fallback) {
-  const [value, setValue] = useState(fallback)
+  const [value, setValue] = useState(() => {
+    if (typeof window !== 'undefined' && window.__festivalStoredStateReady) {
+      return safeRead(key, fallback)
+    }
+    return fallback
+  })
   const loaded = useRef(false)
+  const skippedInitialWrite = useRef(false)
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     setValue(safeRead(key, fallback))
     loaded.current = true
+    if (typeof window !== 'undefined') {
+      window.__festivalStoredStateReady = true
+    }
   }, [key])
 
   useEffect(() => {
+    if (!loaded.current) return
+    if (!skippedInitialWrite.current) {
+      skippedInitialWrite.current = true
+      return
+    }
     if (loaded.current) safeWrite(key, value)
   }, [key, value])
 
@@ -166,6 +184,20 @@ function uniqueIds(ids) {
       seen[id] = true
       return true
     })
+}
+
+function applyFilmMarkAliases(films, marks) {
+  const source = marks && typeof marks === 'object' ? marks : {}
+  let next = source
+  ;(Array.isArray(films) ? films : []).forEach(film => {
+    if (!film || source[film.id]) return
+    const aliasIds = Array.isArray(film.markAliasFilmIds) ? film.markAliasFilmIds : []
+    const aliasId = aliasIds.find(id => source[id])
+    if (!aliasId) return
+    if (next === source) next = { ...source }
+    next[film.id] = source[aliasId]
+  })
+  return next
 }
 
 function compact(items) {
@@ -263,7 +295,7 @@ function sortFilms(films, sortKey, marks) {
     return sorted.sort((a, b) => compareText(schedule.filmSection(a) || '其他', schedule.filmSection(b) || '其他') || compareByFilmTitle(a, b))
   }
   if (sortKey === 'interest') {
-    return sorted.sort((a, b) => getInterestRank(marks[b.id]) - getInterestRank(marks[a.id]) || compareByFilmTitle(a, b))
+    return sorted.sort((a, b) => getInterestRank(schedule.getFilmMark(b, marks)) - getInterestRank(schedule.getFilmMark(a, marks)) || compareByFilmTitle(a, b))
   }
   return sorted
 }
@@ -278,7 +310,7 @@ function filmGroupInfo(film, sortKey, marks) {
     return { key: `section:${label}`, label }
   }
   if (sortKey === 'interest') {
-    const interest = getInterestMeta(marks[film.id])
+    const interest = schedule.getFilmInterest(film, marks)
     return { key: `interest:${interest.rank || 0}`, label: interest.label || '未标星' }
   }
   return { key: 'default', label: '' }
@@ -336,18 +368,58 @@ function getAnonUserId() {
   return value
 }
 
-function trackUsageEvent(event, festivalId) {
-  if (typeof window === 'undefined') return
+const USAGE_EVENT_FLUSH_DELAY = 60000
+const USAGE_EVENT_MIN_FLUSH_INTERVAL = 45000
+
+function getUsageEventState() {
+  if (typeof window === 'undefined') return null
+  if (!window.__festivalUsageEventState) {
+    window.__festivalUsageEventState = {
+      festivalId: '',
+      events: {},
+      timer: null,
+      lastFlushAt: 0,
+      bound: false
+    }
+  }
+  const state = window.__festivalUsageEventState
+  if (!state.bound) {
+    state.bound = true
+    window.addEventListener('pagehide', () => flushUsageEvents({ force: true }))
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushUsageEvents({ force: true })
+    })
+  }
+  return state
+}
+
+function flushUsageEvents(options) {
+  const state = getUsageEventState()
+  if (!state) return
+  if (state.timer) {
+    window.clearTimeout(state.timer)
+    state.timer = null
+  }
+  const events = Object.entries(state.events)
+    .map(([event, count]) => ({ event, count }))
+    .filter(item => item.count > 0)
+  if (!events.length) return
+  const force = !!(options && options.force)
+  const now = Date.now()
+  if (!force && state.lastFlushAt && now - state.lastFlushAt < USAGE_EVENT_MIN_FLUSH_INTERVAL) {
+    state.timer = window.setTimeout(() => flushUsageEvents(), USAGE_EVENT_FLUSH_DELAY)
+    return
+  }
+  state.lastFlushAt = now
+  state.events = {}
   const payload = JSON.stringify({
-    event,
-    festivalId: festivalId || 'siff2026'
+    festivalId: state.festivalId || 'siff2026',
+    events
   })
   try {
     if (window.navigator && typeof window.navigator.sendBeacon === 'function') {
       const blob = new Blob([payload], { type: 'application/json' })
-      if (window.navigator.sendBeacon('/api/events/track', blob)) {
-        return
-      }
+      if (window.navigator.sendBeacon('/api/events/track', blob)) return
     }
   } catch (error) {}
   fetch('/api/events/track', {
@@ -356,6 +428,21 @@ function trackUsageEvent(event, festivalId) {
     body: payload,
     keepalive: true
   }).catch(() => {})
+}
+
+function trackUsageEvent(event, festivalId) {
+  if (typeof window === 'undefined') return
+  const state = getUsageEventState()
+  if (!state) return
+  const nextFestivalId = festivalId || 'siff2026'
+  if (state.festivalId && state.festivalId !== nextFestivalId) {
+    flushUsageEvents()
+  }
+  state.festivalId = nextFestivalId
+  state.events[event] = (state.events[event] || 0) + 1
+  if (!state.timer) {
+    state.timer = window.setTimeout(() => flushUsageEvents(), USAGE_EVENT_FLUSH_DELAY)
+  }
 }
 
 function posterSrc(film) {
@@ -371,7 +458,8 @@ function filmSearchText(film) {
     schedule.filmDirector(film),
     schedule.filmSection(film),
     schedule.filmCountry(film),
-    schedule.filmGenre(film)
+    schedule.filmGenre(film),
+    filmSynopsis(film)
   ].join(' ').toLowerCase()
 }
 
@@ -496,14 +584,31 @@ function formatPosterDuration(minutes) {
   return `${hour}h${minute ? `${minute}m` : ''}`
 }
 
+function posterPopularityText(item, options) {
+  if (!options || options.includePopularity === false) return ''
+  const count = Number(options.popularity && options.popularity[item.id])
+  if (!Number.isFinite(count) || count <= 0) return ''
+  return `${Math.round(count)}人已排`
+}
+
 function buildPoster(plan, options) {
   const theme = getPosterTheme(options && options.theme)
   const layout = theme.layout || 'minimal'
+  const includePosters = Boolean(options && options.includePosters)
   const width = POSTER_WIDTH
   const margin = layout === 'gallery' ? 58 : layout === 'list' ? 62 : 74
   const contentWidth = width - margin * 2
   const timeX = margin
-  const mainX = layout === 'gallery' ? 188 : layout === 'list' ? 184 : 216
+  const baseMainX = layout === 'gallery' ? 188 : layout === 'list' ? 184 : 216
+  const posterSlot = includePosters
+    ? {
+        width: layout === 'gallery' ? 92 : layout === 'list' ? 76 : 80,
+        height: layout === 'gallery' ? 130 : layout === 'list' ? 108 : 114,
+        gap: layout === 'list' ? 18 : 18,
+        radius: layout === 'gallery' ? 8 : 7
+      }
+    : null
+  const mainX = posterSlot ? baseMainX + posterSlot.width + posterSlot.gap : baseMainX
   const mainWidth = width - mainX - margin
   const blocks = []
   const festivalName = posterFestivalName(options && options.festivalName)
@@ -537,12 +642,17 @@ function buildPoster(plan, options) {
     day.items.forEach(item => {
       const titleSize = layout === 'noir' ? 28 : layout === 'list' ? 28 : 29
       const venueSize = layout === 'noir' ? 20 : layout === 'list' ? 20 : 21
+      const titleLineHeight = layout === 'list' ? 34 : 36
+      const venueLineHeight = layout === 'list' ? 26 : 28
       const titleLines = wrapPosterText(item.cnTitle, mainWidth, titleSize)
-      const venueLines = wrapPosterText(posterVenue(item), mainWidth, venueSize)
+      const popularityText = posterPopularityText(item, options)
+      const venueLines = wrapPosterText(compact([posterVenue(item), popularityText]), mainWidth, venueSize)
       const itemHeight = Math.max(
         layout === 'gallery' ? 116 : layout === 'list' ? 98 : 106,
-        26 + titleLines.length * (layout === 'list' ? 34 : 36) + venueLines.length * (layout === 'list' ? 26 : 28)
+        posterSlot ? posterSlot.height + 12 : 0,
+        26 + titleLines.length * titleLineHeight + venueLines.length * venueLineHeight
       )
+      const posterY = y + Math.max(0, Math.round((itemHeight - (posterSlot?.height || 0)) / 2) - 2)
 
       blocks.push({
         type: 'item',
@@ -552,10 +662,19 @@ function buildPoster(plan, options) {
         timeX,
         mainX,
         mainWidth,
+        ruleWidth: contentWidth,
+        panelWidth: contentWidth + 34,
+        posterX: posterSlot ? baseMainX : 0,
+        posterY,
+        posterWidth: posterSlot?.width || 0,
+        posterHeight: posterSlot?.height || 0,
+        posterRadius: posterSlot?.radius || 0,
+        posterSrc: posterSlot ? String((options && options.posterSrcByFilmId && options.posterSrcByFilmId[item.filmId]) || item.posterSrc || '').replace(/^\/assets\/posters\//, '/posters/') : '',
         start: item.start,
         end: item.end,
         titleLines,
         venueLines,
+        popularityText,
         conflict: item.conflict
       })
       y += itemHeight + (layout === 'gallery' ? 18 : layout === 'list' ? 18 : 28)
@@ -580,6 +699,7 @@ function buildPoster(plan, options) {
     height: Math.max(420, y),
     blocks,
     theme,
+    includePosters,
     includeCode: false,
     summary: {
       title: `${festivalName} 我的排片`,
@@ -624,6 +744,96 @@ function drawPosterTextLines(ctx, lines, x, y, lineHeight) {
   lines.forEach((line, index) => {
     ctx.fillText(line, x, y + index * lineHeight)
   })
+}
+
+function posterPopularityColor(colors) {
+  return (colors.layout || '') === 'noir' ? '#8fa6bc' : '#536b84'
+}
+
+function drawPosterVenueLines(ctx, block, x, y, lineHeight, colors, size, weight) {
+  const lines = Array.isArray(block.venueLines) ? block.venueLines : []
+  const heat = block.popularityText || ''
+  lines.forEach((line, index) => {
+    const baseline = y + index * lineHeight
+    setPosterText(ctx, size, colors.muted, weight)
+    if (!heat || !line.endsWith(heat)) {
+      ctx.fillText(line, x, baseline)
+      return
+    }
+
+    const prefix = line.slice(0, -heat.length)
+    ctx.fillText(prefix, x, baseline)
+    const prefixWidth = ctx.measureText(prefix).width
+    setPosterText(ctx, size, posterPopularityColor(colors), weight)
+    ctx.fillText(heat, x + prefixWidth, baseline)
+  })
+}
+
+function isCanvasSafePosterSrc(src) {
+  const value = String(src || '').trim()
+  if (!value) return false
+  if (value.startsWith('/posters/')) return true
+  if (typeof window === 'undefined') return false
+  try {
+    const url = new URL(value, window.location.href)
+    return url.origin === window.location.origin && url.pathname.startsWith('/posters/')
+  } catch (error) {
+    return false
+  }
+}
+
+function loadPosterImage(src) {
+  if (typeof window === 'undefined' || !isCanvasSafePosterSrc(src)) {
+    return Promise.resolve(null)
+  }
+  return new Promise(resolve => {
+    const image = new window.Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
+
+async function hydratePosterImages(poster) {
+  const imageBlocks = poster.blocks.filter(block => block.type === 'item' && block.posterWidth > 0)
+  await Promise.all(imageBlocks.map(async block => {
+    block.posterImage = await loadPosterImage(block.posterSrc)
+  }))
+}
+
+function drawCanvasPosterImage(ctx, block, colors) {
+  if (!block.posterWidth || !block.posterHeight) return
+
+  const x = block.posterX
+  const y = block.posterY
+  const width = block.posterWidth
+  const height = block.posterHeight
+  const radius = block.posterRadius || 7
+  const image = block.posterImage
+
+  ctx.save()
+  drawRoundRect(ctx, x, y, width, height, radius)
+  ctx.clip()
+
+  if (image && (image.naturalWidth || image.width) && (image.naturalHeight || image.height)) {
+    const sourceWidth = image.naturalWidth || image.width
+    const sourceHeight = image.naturalHeight || image.height
+    const scale = Math.max(width / sourceWidth, height / sourceHeight)
+    const cropWidth = width / scale
+    const cropHeight = height / scale
+    const sourceX = Math.max(0, (sourceWidth - cropWidth) / 2)
+    const sourceY = Math.max(0, (sourceHeight - cropHeight) / 2)
+    ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height)
+  } else {
+    ctx.fillStyle = colors.ghost || colors.faint || '#f1f1ef'
+    ctx.fillRect(x, y, width, height)
+  }
+
+  ctx.restore()
+  ctx.strokeStyle = colors.faint || 'rgba(0,0,0,0.08)'
+  ctx.lineWidth = 1
+  drawRoundRect(ctx, x, y, width, height, radius)
+  ctx.stroke()
 }
 
 function drawPosterTitleBlock(ctx, block, poster, colors) {
@@ -749,29 +959,29 @@ function paintPlanPoster(ctx, poster) {
         ctx.fillText(block.start, block.timeX, block.y + 30)
         setPosterText(ctx, 17, colors.subtle || colors.muted, '400')
         ctx.fillText(block.end, block.timeX + 7, block.y + 62)
+        drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 28, colors.ink, '570')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 34)
         const venueY = block.y + 32 + block.titleLines.length * 34 + 7
-        setPosterText(ctx, 20, colors.muted, '340')
-        drawPosterTextLines(ctx, block.venueLines, block.mainX, venueY, 26)
+        drawPosterVenueLines(ctx, block, block.mainX, venueY, 26, colors, 20, '340')
       } else if (layout === 'silver') {
         ctx.strokeStyle = block.conflict ? colors.conflict : colors.faint
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(block.x, block.y - 12)
-        ctx.lineTo(block.x + block.mainWidth + 142, block.y - 12)
+        ctx.lineTo(block.x + (block.ruleWidth || block.mainWidth + 142), block.y - 12)
         ctx.stroke()
         setPosterText(ctx, 27, colors.ink, '620')
         ctx.fillText(block.start, block.timeX, block.y + 30)
         setPosterText(ctx, 17, colors.subtle || colors.muted, '380')
         ctx.fillText(block.end, block.timeX + 7, block.y + 64)
+        drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 29, colors.ink, '540')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        setPosterText(ctx, 21, colors.muted, '330')
-        drawPosterTextLines(ctx, block.venueLines, block.mainX, venueY, 28)
+        drawPosterVenueLines(ctx, block, block.mainX, venueY, 28, colors, 21, '330')
       } else if (layout === 'noir') {
-        fillRoundRect(ctx, block.x - 18, block.y - 18, block.mainWidth + 176, block.height + 18, 18, colors.panel)
+        fillRoundRect(ctx, block.x - 18, block.y - 18, block.panelWidth || block.mainWidth + 176, block.height + 18, 18, colors.panel)
         ctx.strokeStyle = block.conflict ? colors.conflict : colors.faint
         ctx.lineWidth = 1
         ctx.beginPath()
@@ -782,38 +992,34 @@ function paintPlanPoster(ctx, poster) {
         ctx.fillText(block.start, block.timeX, block.y + 30)
         setPosterText(ctx, 17, colors.subtle || colors.muted, '380')
         ctx.fillText(block.end, block.timeX + 7, block.y + 64)
+        drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 28, colors.ink, '540')
         drawPosterTextLines(ctx, block.titleLines, block.mainX - 18, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        setPosterText(ctx, 20, colors.muted, '330')
-        drawPosterTextLines(ctx, block.venueLines, block.mainX - 18, venueY, 27)
+        drawPosterVenueLines(ctx, block, block.mainX - 18, venueY, 27, colors, 20, '330')
       } else if (layout === 'gallery') {
-        fillRoundRect(ctx, block.x + 98, block.y - 18, block.mainWidth + 24, block.height + 12, 16, colors.panel)
+        fillRoundRect(ctx, block.x + 98, block.y - 18, block.posterWidth ? (block.ruleWidth || block.mainWidth + 122) - 98 : block.mainWidth + 24, block.height + 12, 16, colors.panel)
         setPosterText(ctx, 26, colors.ink, '640')
         ctx.fillText(block.start, block.timeX, block.y + 30)
         setPosterText(ctx, 17, colors.subtle || colors.muted, '380')
         ctx.fillText(block.end, block.timeX + 7, block.y + 64)
+        drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 28, colors.ink, '560')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        setPosterText(ctx, 20, colors.muted, '330')
-        drawPosterTextLines(ctx, block.venueLines, block.mainX, venueY, 27)
+        drawPosterVenueLines(ctx, block, block.mainX, venueY, 27, colors, 20, '330')
       } else {
         setPosterText(ctx, 27, colors.ink, '650')
         ctx.fillText(block.start, block.timeX, block.y + 30)
         setPosterText(ctx, 17, colors.subtle || colors.muted, '380')
         ctx.fillText(block.end, block.timeX + 7, block.y + 64)
+        drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 29, colors.ink, '560')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        setPosterText(ctx, 21, colors.muted, '320')
-        drawPosterTextLines(ctx, block.venueLines, block.mainX, venueY, 28)
+        drawPosterVenueLines(ctx, block, block.mainX, venueY, 28, colors, 21, '320')
       }
 
-      if (block.conflict) {
-        setPosterText(ctx, 17, colors.conflict, '480')
-        ctx.fillText('时间冲突', block.mainX, block.y + block.height - 6)
-      }
       return
     }
 
@@ -827,9 +1033,12 @@ function paintPlanPoster(ctx, poster) {
   })
 }
 
-function createPlanPosterImage(plan, options) {
+async function createPlanPosterImage(plan, options) {
   if (typeof document === 'undefined') return null
   const poster = buildPoster(plan, options)
+  if (poster.includePosters) {
+    await hydratePosterImages(poster)
+  }
   const canvas = document.createElement('canvas')
   const pixelRatio = Math.max(1, Math.min(window.devicePixelRatio || 1, poster.height > 2600 ? 1.5 : 2))
   canvas.width = poster.width * pixelRatio
@@ -839,11 +1048,15 @@ function createPlanPosterImage(plan, options) {
   const ctx = canvas.getContext('2d')
   ctx.scale(pixelRatio, pixelRatio)
   paintPlanPoster(ctx, poster)
-  return {
-    url: canvas.toDataURL('image/png'),
-    filename: `${options.festivalName || 'festival'}-plan.png`,
-    width: poster.width,
-    height: poster.height
+  try {
+    return {
+      url: canvas.toDataURL('image/png'),
+      filename: `${options.festivalName || 'festival'}-plan.png`,
+      width: poster.width,
+      height: poster.height
+    }
+  } catch (error) {
+    return null
   }
 }
 
@@ -916,28 +1129,41 @@ function FieldPanel({ fieldConfig, setFieldConfig, mode }) {
   const options = mode === 'films'
     ? [
       ['info', '影片信息', '年份 · 导演 · 片长 · 单元'],
-      ['rating', '影片评分', '豆瓣 / IMDb 评分']
+      ['rating', '影片评分', '豆瓣 / IMDb 评分'],
+      ['synopsis', '简介', '剧情简介 / 一句话介绍', false]
     ]
     : [
       ['info', '影片信息', '年份 · 导演 · 片长'],
       ['rating', '影片评分', '豆瓣 / IMDb 评分'],
+      ['synopsis', '简介', '剧情简介 / 一句话介绍', false],
       ['ticket', '特殊场次', '4K修复 · 映后交流等标签'],
       ['popularity', '热度情况', '关闭后不显示热度，也停止统计你选择的场次']
     ]
 
   return (
     <div className="filter-panel field-panel">
-      {options.map(([key, label, desc]) => (
-        <button className="field-row" type="button" key={key} onClick={() => setFieldConfig(prev => ({ ...prev, [key]: prev[key] === false }))}>
-          <span className="field-row-text">
-            <span className="field-row-label">{label}</span>
-            <span className="field-row-desc">{desc}</span>
-          </span>
-          <span className={`field-switch ${fieldConfig[key] !== false ? 'is-on' : ''}`}>
-            <span className="field-switch-dot" />
-          </span>
-        </button>
-      ))}
+      {options.map(([key, label, desc, defaultOn = true]) => {
+        const checked = defaultOn ? fieldConfig[key] !== false : fieldConfig[key] === true
+        return (
+          <button
+            className="field-row"
+            type="button"
+            key={key}
+            onClick={() => setFieldConfig(prev => {
+              const active = defaultOn ? prev[key] !== false : prev[key] === true
+              return { ...prev, [key]: !active }
+            })}
+          >
+            <span className="field-row-text">
+              <span className="field-row-label">{label}</span>
+              <span className="field-row-desc">{desc}</span>
+            </span>
+            <span className={`field-switch ${checked ? 'is-on' : ''}`}>
+              <span className="field-switch-dot" />
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -980,6 +1206,7 @@ function RatingSlider({ label, value, onChange }) {
 function FilmCard({ film, mark, fieldConfig, onOpen, onMark }) {
   const metaText = detailMetaText([schedule.filmCoreMeta(film), schedule.filmDirector(film)])
   const ratingSummary = schedule.filmRatingSummary(film)
+  const synopsis = filmSynopsis(film)
   const interestRank = MARK_OPTIONS.find(item => item.key === mark)?.rank || 0
   const src = posterSrc(film)
 
@@ -1016,6 +1243,7 @@ function FilmCard({ film, mark, fieldConfig, onOpen, onMark }) {
           ))}
         </div>
       </div>
+      {fieldConfig.synopsis === true && synopsis ? <div className="film-synopsis">{synopsis}</div> : null}
     </article>
   )
 }
@@ -1032,16 +1260,16 @@ function FilmPage({
   openFilm,
   setMark
 }) {
-  const [scope, setScope] = useState('all')
+  const [scope, setScope] = useStoredState('filmScope', 'all')
   const [fieldOpen, setFieldOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [activeSort, setActiveSort] = useStoredState('filmActiveSort', DEFAULT_SORT)
   const [collapsedGroups, setCollapsedGroups] = useStoredState('filmCollapsedGroups', {})
-  const [section, setSection] = useState(ALL_SECTION)
-  const [director, setDirector] = useState(ALL_DIRECTOR)
-  const [doubanMin, setDoubanMin] = useState(0)
-  const [imdbMin, setImdbMin] = useState(0)
+  const [section, setSection] = useStoredState('filmFilterSection', ALL_SECTION)
+  const [director, setDirector] = useStoredState('filmFilterDirector', ALL_DIRECTOR)
+  const [doubanMin, setDoubanMin] = useStoredState('filmFilterDoubanMin', 0)
+  const [imdbMin, setImdbMin] = useStoredState('filmFilterImdbMin', 0)
   const searchFilms = useMemo(() => {
     const q = query.trim().toLowerCase()
     return films.filter(film => {
@@ -1050,7 +1278,7 @@ function FilmPage({
     })
   }, [films, query])
   const queriedFilms = useMemo(() => {
-    return searchFilms.filter(film => scope !== 'marked' || getInterestRank(marks[film.id]) > 0)
+    return searchFilms.filter(film => scope !== 'marked' || getInterestRank(schedule.getFilmMark(film, marks)) > 0)
   }, [marks, scope, searchFilms])
   const filterOptionFilms = scope === 'marked' && !queriedFilms.length ? searchFilms : queriedFilms
   const sectionOptions = useMemo(() => [{ key: ALL_SECTION, label: '全部单元', count: filterOptionFilms.length }].concat(countOptions(filterOptionFilms, film => schedule.filmSection(film) || '其他')), [filterOptionFilms])
@@ -1066,6 +1294,8 @@ function FilmPage({
   }), [queriedFilms, activeSection, activeDirector, doubanMin, imdbMin])
   const groups = useMemo(() => buildFilmGroups(list, activeSort, marks), [list, activeSort, marks])
   const filterActiveCount = (activeSection !== ALL_SECTION ? 1 : 0) + (activeDirector !== ALL_DIRECTOR ? 1 : 0) + (doubanMin > 0 ? 1 : 0) + (imdbMin > 0 ? 1 : 0)
+  const hasGroupedView = activeSort !== 'default' && groups.length > 0
+  const allGroupsCollapsed = hasGroupedView && groups.every(group => collapsedGroups?.[group.key])
   const resetFilters = () => {
     setSection(ALL_SECTION)
     setDirector(ALL_DIRECTOR)
@@ -1079,6 +1309,21 @@ function FilmPage({
   const toggleGroup = key => {
     setCollapsedGroups(prev => ({ ...(prev || {}), [key]: !prev?.[key] }))
   }
+  const toggleAllGroups = () => {
+    if (!hasGroupedView) return
+    if (allGroupsCollapsed) {
+      setCollapsedGroups(prev => {
+        const next = { ...(prev || {}) }
+        groups.forEach(group => { delete next[group.key] })
+        return next
+      })
+      return
+    }
+    setCollapsedGroups(prev => groups.reduce((next, group) => {
+      next[group.key] = true
+      return next
+    }, { ...(prev || {}) }))
+  }
 
   return (
     <div className="page films-page">
@@ -1090,22 +1335,35 @@ function FilmPage({
         </div>
       </div>
 
-      <div className="film-filter-scroll">
-        <div className="film-filter-row">
-          <div className="interest-segment">
-            <button className={`interest-option ${scope === 'all' ? 'is-active' : ''}`} type="button" onClick={() => setScope('all')}>全部影片</button>
-            <button className={`interest-option ${scope === 'marked' ? 'is-active' : ''}`} type="button" onClick={() => setScope('marked')}>已标星影片</button>
+      <div className="film-filter-bar">
+        <div className="film-filter-scroll">
+          <div className="film-filter-row">
+            <div className="interest-segment">
+              <button className={`interest-option ${scope === 'all' ? 'is-active' : ''}`} type="button" onClick={() => setScope('all')}>全部影片</button>
+              <button className={`interest-option ${scope === 'marked' ? 'is-active' : ''}`} type="button" onClick={() => setScope('marked')}>已标星影片</button>
+            </div>
+            <button className={`film-tool-chip ${sortOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSortOpen(!sortOpen); setFieldOpen(false); setFilterOpen(false) }}>
+              <span className="film-tool-label">{sortFilterLabel(activeSort)}</span>
+              <span className="filter-triangle">▼</span>
+            </button>
+            <button className={`film-tool-chip ${filterOpen ? 'is-active' : ''}`} type="button" onClick={() => { setFilterOpen(!filterOpen); setFieldOpen(false); setSortOpen(false) }}>
+              <span className="film-tool-label">筛选</span>
+              {filterActiveCount ? <span className="filter-count">· {filterActiveCount}</span> : null}
+            </button>
+            <button className={`film-tool-chip ${fieldOpen ? 'is-active' : ''}`} type="button" onClick={() => { setFieldOpen(!fieldOpen); setSortOpen(false); setFilterOpen(false) }}>字段</button>
           </div>
-          <button className={`film-tool-chip ${sortOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSortOpen(!sortOpen); setFieldOpen(false); setFilterOpen(false) }}>
-            <span className="film-tool-label">{sortFilterLabel(activeSort)}</span>
-            <span className="filter-triangle">▼</span>
-          </button>
-          <button className={`film-tool-chip ${filterOpen ? 'is-active' : ''}`} type="button" onClick={() => { setFilterOpen(!filterOpen); setFieldOpen(false); setSortOpen(false) }}>
-            <span className="film-tool-label">筛选</span>
-            {filterActiveCount ? <span className="filter-count">· {filterActiveCount}</span> : null}
-          </button>
-          <button className={`film-tool-chip ${fieldOpen ? 'is-active' : ''}`} type="button" onClick={() => { setFieldOpen(!fieldOpen); setSortOpen(false); setFilterOpen(false) }}>字段</button>
         </div>
+        {hasGroupedView ? (
+          <button
+            className="group-toggle-icon"
+            type="button"
+            onClick={toggleAllGroups}
+            aria-label={allGroupsCollapsed ? '展开全部分组' : '收起全部分组'}
+            title={allGroupsCollapsed ? '展开全部分组' : '收起全部分组'}
+          >
+            {allGroupsCollapsed ? <Maximize2 aria-hidden="true" /> : <Minimize2 aria-hidden="true" />}
+          </button>
+        ) : null}
       </div>
 
       {sortOpen ? (
@@ -1144,7 +1402,9 @@ function FilmPage({
               {activeSort !== 'default' ? (
                 <button className="group-header" type="button" onClick={() => toggleGroup(group.key)}>
                   <div className="group-left">
-                    <span className={`group-caret-symbol ${collapsedGroups?.[group.key] ? '' : 'is-open'}`}>{collapsedGroups?.[group.key] ? '›' : '⌄'}</span>
+                    <span className="group-caret-symbol">
+                      {collapsedGroups?.[group.key] ? <ChevronRight aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+                    </span>
                     <div className="group-label">{group.label}</div>
                   </div>
                   <div className="group-side"><span className="group-count">{group.count} 部</span></div>
@@ -1156,7 +1416,7 @@ function FilmPage({
                     <FilmCard
                       key={film.id}
                       film={film}
-                      mark={marks[film.id] || ''}
+                      mark={schedule.getFilmMark(film, marks) || ''}
                       fieldConfig={fieldConfig}
                       onOpen={openFilm}
                       onMark={setMark}
@@ -1214,6 +1474,7 @@ function ScreeningCard({ item, selected, filmScheduled, pickConflict, fieldConfi
             <div className="screen-meta-line"><span className="screen-meta">{item.cardMeta || item.screenMeta}</span></div>
           ) : null}
           {fieldConfig.rating !== false && item.ratingSummary ? <div className="rating-line">{item.ratingSummary}</div> : null}
+          {fieldConfig.synopsis === true && item.synopsis ? <div className="screen-synopsis">{item.synopsis}</div> : null}
           <div className="venue-line">{item.cinema} · {item.hall}</div>
           <TagLine screening={item} fieldConfig={fieldConfig} popularity={popularity} />
         </div>
@@ -1223,9 +1484,9 @@ function ScreeningCard({ item, selected, filmScheduled, pickConflict, fieldConfi
           <span className={`pick-symbol ${selected ? 'is-filled' : ''}`}>
             <ActionGlyph type={selected ? 'check' : 'plus'} />
           </span>
-          <span className="pick-label">{selected ? '已排' : filmScheduled ? '换到这场' : pickConflict ? '仍选' : '加入'}</span>
+          <span className="pick-label">{selected ? '已排' : filmScheduled ? '加入' : pickConflict ? '仍选' : '加入'}</span>
         </button>
-        {filmScheduled && !selected ? <span className="action-note">已在排片中</span> : null}
+        {filmScheduled && !selected ? <span className="action-note">已排过这部</span> : null}
       </div>
     </div>
   )
@@ -1237,7 +1498,9 @@ function TimelineDay({ group, selectedIds, allSelectedFilmIds, showHeader = true
       {showHeader ? (
         <button className="screening-day-head" type="button" onClick={onToggleDay}>
           <div className="screening-day-left">
-            <span className={`screening-day-caret ${collapsed ? '' : 'is-open'}`}>{collapsed ? '›' : '⌄'}</span>
+            <span className="screening-day-caret">
+              {collapsed ? <ChevronRight aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+            </span>
             <span className="screening-day-label">{group.dayLabel}</span>
           </div>
           <div className="screening-day-count">{group.items.length} 场</div>
@@ -1289,17 +1552,17 @@ function SchedulePage({
   popularity,
   goFilms
 }) {
-  const [scope, setScope] = useState('marked')
+  const [scope, setScope] = useStoredState('scheduleScope', 'marked')
   const [fieldOpen, setFieldOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
-  const [activeDay, setActiveDay] = useState(ALL_DAYS)
-  const [activeDirector, setActiveDirector] = useState(ALL_DIRECTOR)
-  const [activeCinema, setActiveCinema] = useState(ALL_CINEMAS)
-  const [activeSection, setActiveSection] = useState(ALL_SECTION)
-  const [doubanMin, setDoubanMin] = useState(0)
-  const [imdbMin, setImdbMin] = useState(0)
-  const [collapsedDays, setCollapsedDays] = useState({})
-  const wantedScreenings = useMemo(() => screenings.filter(item => getInterestRank(marks[item.filmId]) > 0), [screenings, marks])
+  const [activeDay, setActiveDay] = useStoredState('scheduleFilterDay', ALL_DAYS)
+  const [activeDirector, setActiveDirector] = useStoredState('scheduleFilterDirector', ALL_DIRECTOR)
+  const [activeCinema, setActiveCinema] = useStoredState('scheduleFilterCinema', ALL_CINEMAS)
+  const [activeSection, setActiveSection] = useStoredState('scheduleFilterSection', ALL_SECTION)
+  const [doubanMin, setDoubanMin] = useStoredState('scheduleFilterDoubanMin', 0)
+  const [imdbMin, setImdbMin] = useStoredState('scheduleFilterImdbMin', 0)
+  const [collapsedDays, setCollapsedDays] = useStoredState('scheduleCollapsedDays', {})
+  const wantedScreenings = useMemo(() => screenings.filter(item => (item.interest && item.interest.rank) > 0), [screenings])
   const scopeScreenings = scope === 'all' ? screenings : wantedScreenings
   const filterOptionScreenings = scope === 'marked' && !scopeScreenings.length ? screenings : scopeScreenings
   const selectedFilmIds = useMemo(() => selectedIds.reduce((map, id) => {
@@ -1357,6 +1620,8 @@ function SchedulePage({
   }, [scopeScreenings, pickedCinema, pickedSection, pickedDirector, pickedDay, doubanMin, imdbMin, query, selectedIds, screenings])
   const groups = useMemo(() => schedule.groupByDay(list), [list])
   const showDayHeaders = pickedDay === ALL_DAYS
+  const hasDayGroups = showDayHeaders && groups.length > 0
+  const allDaysCollapsed = hasDayGroups && groups.every(group => collapsedDays?.[group.date])
   const hasMarked = wantedScreenings.length > 0
   const filterActiveCount = (pickedDay !== ALL_DAYS ? 1 : 0) + (pickedCinema !== ALL_CINEMAS ? 1 : 0) + (pickedSection !== ALL_SECTION ? 1 : 0) + (pickedDirector !== ALL_DIRECTOR ? 1 : 0) + (doubanMin > 0 ? 1 : 0) + (imdbMin > 0 ? 1 : 0)
   const selectFilter = (type, value) => {
@@ -1373,6 +1638,21 @@ function SchedulePage({
     setDoubanMin(0)
     setImdbMin(0)
     setCollapsedDays({})
+  }
+  const toggleAllDays = () => {
+    if (!hasDayGroups) return
+    if (allDaysCollapsed) {
+      setCollapsedDays(prev => {
+        const next = { ...(prev || {}) }
+        groups.forEach(group => { delete next[group.date] })
+        return next
+      })
+      return
+    }
+    setCollapsedDays(prev => groups.reduce((next, group) => {
+      next[group.date] = true
+      return next
+    }, { ...(prev || {}) }))
   }
 
   return (
@@ -1393,6 +1673,17 @@ function SchedulePage({
             {filterActiveCount ? <span className="filter-count">· {filterActiveCount}</span> : null}
           </button>
           <button className={`tool-filter-chip ${fieldOpen ? 'is-active' : ''}`} type="button" onClick={() => { setFieldOpen(!fieldOpen); setFilterOpen(false) }}>字段</button>
+          {hasDayGroups ? (
+            <button
+              className="group-toggle-icon schedule-group-toggle"
+              type="button"
+              onClick={toggleAllDays}
+              aria-label={allDaysCollapsed ? '展开全部日期' : '收起全部日期'}
+              title={allDaysCollapsed ? '展开全部日期' : '收起全部日期'}
+            >
+              {allDaysCollapsed ? <Maximize2 aria-hidden="true" /> : <Minimize2 aria-hidden="true" />}
+            </button>
+          ) : null}
         </div>
         {filterOpen ? (
           <div className="filter-panel">
@@ -1429,7 +1720,7 @@ function SchedulePage({
               selectedIds={selectedIds}
               allSelectedFilmIds={selectedFilmIds}
               showHeader={showDayHeaders}
-              collapsed={!!collapsedDays[group.date]}
+              collapsed={showDayHeaders && !!collapsedDays[group.date]}
               onToggleDay={() => setCollapsedDays(prev => ({ ...prev, [group.date]: !prev[group.date] }))}
               fieldConfig={fieldConfig}
               popularity={popularity}
@@ -1466,6 +1757,28 @@ function PlanCard({ screening, popularity, onRemove, onOpenFilm }) {
   )
 }
 
+function PlanTransfer({ from, to }) {
+  const commute = schedule.commuteBetween(from, to)
+  if (!commute) return null
+  const lines = commute.kind === 'same'
+    ? [commute.distanceText]
+    : [commute.distanceText ? `📍${commute.distanceText}` : ''].concat(commute.modes.map(item => item.text)).filter(Boolean)
+
+  return (
+    <div className={`plan-transfer is-${commute.kind}`}>
+      <div className="commute-badge" aria-label={`${commute.from}到${commute.to}通勤`}>
+        {lines.map(line => <span key={line}>{line}</span>)}
+      </div>
+    </div>
+  )
+}
+
+function fullConflictText(pair) {
+  const a = pair?.a || {}
+  const b = pair?.b || {}
+  return `${a.start || ''} ${a.cnTitle || ''} / ${b.start || ''} ${b.cnTitle || ''}`
+}
+
 function PlanPage({
   schemes,
   activeScheme,
@@ -1483,6 +1796,7 @@ function PlanPage({
   popularity
 }) {
   const summary = activeScheme ? `${activeScheme.name} · ${plan.selected.length} 场${plan.totalMinutes ? ` · ${schedule.runtimeText(plan.totalMinutes)}` : ''}` : '方案 1 · 0 场'
+  const [conflictsExpanded, setConflictsExpanded] = useState(false)
   const longPressTimerRef = useRef(null)
   const longPressedRef = useRef(false)
 
@@ -1549,6 +1863,18 @@ function PlanPage({
         <div className="current-plan-bar">
           <div className="current-plan-lead">
             <span className="current-plan-summary">{summary}</span>
+            {plan.conflictPairs.length ? (
+              <button
+                className={`conflict-toggle ${conflictsExpanded ? 'is-open' : ''}`}
+                type="button"
+                onClick={() => setConflictsExpanded(!conflictsExpanded)}
+                aria-expanded={conflictsExpanded}
+                aria-label={`${plan.conflictPairs.length}组冲突`}
+              >
+                <span className="conflict-alert-icon">!</span>
+                <span>{plan.conflictPairs.length}组冲突</span>
+              </button>
+            ) : null}
           </div>
           <div className="current-plan-actions">
             <button className="plan-tool-button" type="button" onClick={deleteScheme}><span className="plan-action-icon is-clear" />删除</button>
@@ -1556,6 +1882,13 @@ function PlanPage({
             <button className={`plan-tool-button ${plan.selected.length ? '' : 'is-disabled'}`} type="button" onClick={openExport}><span className="plan-action-icon is-export" />导出</button>
           </div>
         </div>
+        {plan.conflictPairs.length && conflictsExpanded ? (
+          <div className="conflict-panel">
+            {plan.conflictPairs.map(item => (
+              <div className="conflict-item" key={item.id}>{fullConflictText(item)}</div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {plan.selected.length === 0 ? (
@@ -1570,31 +1903,27 @@ function PlanPage({
         </div>
       ) : null}
 
-      {plan.conflictPairs.length ? (
-        <div className="conflict-panel">
-          <div className="panel-title">待处理冲突</div>
-          {plan.conflictPairs.map(item => <div className="conflict-item" key={item.id}>{item.label}</div>)}
-        </div>
-      ) : null}
-
       {plan.selected.length ? (
         <div className="day-list">
           {plan.days.map(day => (
             <section className="day-section" key={day.date}>
               <div className="day-title">{day.dayLabel}</div>
               <div className="plan-timeline">
-                {day.items.map(item => (
-                  <div className={`plan-item ${item.conflict ? 'has-conflict' : ''}`} key={item.id}>
-                    <div className="timeline-rail">
-                      <div className="time-stamp">
-                        <span className="start mono">{item.start}</span>
-                        <span className="end mono">{item.end}</span>
+                {day.items.map((item, index) => (
+                  <div className="plan-row-group" key={item.id}>
+                    {index > 0 ? <PlanTransfer from={day.items[index - 1]} to={item} /> : null}
+                    <div className={`plan-item ${item.conflict ? 'has-conflict' : ''}`}>
+                      <div className="timeline-rail">
+                        <div className="time-stamp">
+                          <span className="start mono">{item.start}</span>
+                          <span className="end mono">{item.end}</span>
+                        </div>
+                        <div className={`timeline-node ${item.conflict ? 'has-conflict' : ''}`}>
+                          {item.conflict ? <span className="conflict-cross"><span className="conflict-cross-line is-a" /><span className="conflict-cross-line is-b" /></span> : null}
+                        </div>
                       </div>
-                      <div className={`timeline-node ${item.conflict ? 'has-conflict' : ''}`}>
-                        {item.conflict ? <span className="conflict-cross"><span className="conflict-cross-line is-a" /><span className="conflict-cross-line is-b" /></span> : null}
-                      </div>
+                      <PlanCard screening={item} popularity={popularity[item.id] || 0} onRemove={removeScreening} onOpenFilm={openFilm} />
                     </div>
-                    <PlanCard screening={item} popularity={popularity[item.id] || 0} onRemove={removeScreening} onOpenFilm={openFilm} />
                   </div>
                 ))}
               </div>
@@ -1738,7 +2067,7 @@ function ExportActionSheet({ open, onClose, onPoster, onText }) {
   )
 }
 
-function PosterSheet({ open, theme, setTheme, summary, onClose, onConfirm }) {
+function PosterSheet({ open, theme, setTheme, includePosters, setIncludePosters, includePopularity, setIncludePopularity, summary, onClose, onConfirm }) {
   if (!open) return null
   return (
     <div className="poster-mask" onClick={onClose}>
@@ -1755,6 +2084,30 @@ function PosterSheet({ open, theme, setTheme, summary, onClose, onConfirm }) {
             </button>
           ))}
         </div>
+        <button
+          className="poster-option-row"
+          type="button"
+          role="switch"
+          aria-checked={includePosters}
+          onClick={() => setIncludePosters(!includePosters)}
+        >
+          <span className="poster-option-text">包含电影海报</span>
+          <span className={`poster-toggle ${includePosters ? 'is-on' : ''}`}>
+            <span className="poster-toggle-knob" />
+          </span>
+        </button>
+        <button
+          className="poster-option-row"
+          type="button"
+          role="switch"
+          aria-checked={includePopularity}
+          onClick={() => setIncludePopularity(!includePopularity)}
+        >
+          <span className="poster-option-text">包含热度信息</span>
+          <span className={`poster-toggle ${includePopularity ? 'is-on' : ''}`}>
+            <span className="poster-toggle-knob" />
+          </span>
+        </button>
         <div className="poster-actions">
           <button className="poster-secondary" type="button" onClick={onClose}>取消</button>
           <button className="poster-primary" type="button" onClick={onConfirm}>生成长图</button>
@@ -2088,14 +2441,18 @@ export default function FestivalWebApp() {
   const [exportSheetOpen, setExportSheetOpen] = useState(false)
   const [posterSheetOpen, setPosterSheetOpen] = useState(false)
   const [posterTheme, setPosterTheme] = useState('list')
+  const [posterIncludePosters, setPosterIncludePosters] = useState(false)
+  const [posterIncludePopularity, setPosterIncludePopularity] = useState(false)
   const [posterPreview, setPosterPreview] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [schemeDialog, setSchemeDialog] = useState(null)
   const [schemeNameDraft, setSchemeNameDraft] = useState('')
   const [toast, setToast] = useState('')
+  const [showScrollTop, setShowScrollTop] = useState(false)
   const toastTimerRef = useRef(null)
   const scrollPositionsRef = useRef({ films: 0, schedule: 0, plan: 0 })
+  const popularitySyncSignatureRef = useRef('')
 
   const switchTab = nextTab => {
     if (nextTab === tab) return
@@ -2110,6 +2467,13 @@ export default function FestivalWebApp() {
           window.scrollTo(0, scrollPositionsRef.current[nextTab] || 0)
         })
       })
+    }
+  }
+
+  const scrollToTop = () => {
+    scrollPositionsRef.current[tab] = 0
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 
@@ -2131,10 +2495,17 @@ export default function FestivalWebApp() {
     ;(film.screenings || []).forEach(screening => { map[screening.id] = film.id })
     return map
   }, {}), [films])
+  const posterSrcByFilmId = useMemo(() => films.reduce((map, film) => {
+    const src = posterSrc(film)
+    if (src) map[film.id] = src
+    return map
+  }, {}), [films])
   const validScreeningIds = useMemo(() => allScreenings.reduce((map, item) => {
     map[item.id] = true
     return map
   }, {}), [allScreenings])
+  const allScreeningIds = useMemo(() => allScreenings.map(item => item.id), [allScreenings])
+  const allScreeningIdsSignature = useMemo(() => allScreeningIds.join('|'), [allScreeningIds])
   const normalizedSchemes = useMemo(() => {
     const list = Array.isArray(schemes) && schemes.length ? schemes : initialSchemes()
     return list.map((scheme, index) => ({
@@ -2145,6 +2516,11 @@ export default function FestivalWebApp() {
   }, [schemes, validScreeningIds])
   const activeScheme = normalizedSchemes.find(scheme => scheme.id === activeSchemeId) || normalizedSchemes[0]
   const selectedIds = activeScheme?.selectedIds || []
+  const selectedIdsSignature = selectedIds.join('|')
+  const selectedScreeningPayload = useMemo(() => selectedIds.map(id => ({
+    screeningId: id,
+    filmId: screeningFilmMap[id] || ''
+  })), [selectedIdsSignature, screeningFilmMap])
   const plan = useMemo(() => schedule.buildPlan(selectedIds, allScreenings), [selectedIds, allScreenings])
 
   useEffect(() => {
@@ -2156,8 +2532,21 @@ export default function FestivalWebApp() {
   }, [])
 
   useEffect(() => {
+    setMarks(prev => applyFilmMarkAliases(films, prev))
+  }, [films, marks, setMarks])
+
+  useEffect(() => {
     trackUsageEvent('app_open', festivalName)
   }, [festivalName])
+
+  useEffect(() => {
+    const updateScrollTop = () => {
+      setShowScrollTop((window.scrollY || 0) > 360)
+    }
+    updateScrollTop()
+    window.addEventListener('scroll', updateScrollTop, { passive: true })
+    return () => window.removeEventListener('scroll', updateScrollTop)
+  }, [])
 
   useEffect(() => {
     if (scheduleFieldConfig.popularity === false) {
@@ -2169,6 +2558,28 @@ export default function FestivalWebApp() {
       }).catch(() => {})
       return
     }
+    if (!allScreeningIds.length) return
+    const timer = window.setTimeout(() => {
+      fetch('/api/popularity/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          festivalId: festivalName,
+          screeningIds: allScreeningIds
+        })
+      }).then(res => res.json()).then(result => {
+        if (result.ok) setPopularity(result.screeningCounts || {})
+      }).catch(() => {})
+    }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [allScreeningIdsSignature, festivalName, scheduleFieldConfig.popularity])
+
+  useEffect(() => {
+    if (scheduleFieldConfig.popularity === false) return
+    const syncSignature = `${festivalName}|${selectedIdsSignature}`
+    if (!selectedIds.length && !popularitySyncSignatureRef.current) return
+    if (popularitySyncSignatureRef.current === syncSignature) return
+    popularitySyncSignatureRef.current = syncSignature
     const timer = window.setTimeout(() => {
       fetch('/api/popularity/sync', {
         method: 'POST',
@@ -2177,15 +2588,17 @@ export default function FestivalWebApp() {
           festivalId: festivalName,
           anonUserId: getAnonUserId(),
           screeningIds: selectedIds,
-          queryScreeningIds: allScreenings.map(item => item.id),
-          screenings: selectedIds.map(id => ({ screeningId: id, filmId: screeningFilmMap[id] || '' }))
+          queryScreeningIds: selectedIds,
+          screenings: selectedScreeningPayload
         })
       }).then(res => res.json()).then(result => {
-        if (result.ok) setPopularity(result.screeningCounts || {})
+        if (result.ok) {
+          setPopularity(prev => ({ ...prev, ...(result.screeningCounts || {}) }))
+        }
       }).catch(() => {})
-    }, 500)
+    }, 1500)
     return () => window.clearTimeout(timer)
-  }, [selectedIds.join('|'), allScreenings, screeningFilmMap, festivalName, scheduleFieldConfig.popularity])
+  }, [selectedIdsSignature, selectedScreeningPayload, festivalName, scheduleFieldConfig.popularity])
 
   const setActiveSelectedIds = (ids, smartPlanMeta) => {
     const targetId = activeScheme?.id || normalizedSchemes[0]?.id || DEFAULT_SCHEME_ID
@@ -2211,21 +2624,11 @@ export default function FestivalWebApp() {
       return
     }
     trackUsageEvent('select_screening', festivalName)
-    const sameFilmSelectedIds = allScreenings
-      .filter(item => item.filmId === screening.filmId && selectedIds.includes(item.id))
-      .map(item => item.id)
-    const nextSelectedIds = selectedIds.filter(item => !sameFilmSelectedIds.includes(item)).concat(id)
+    const nextSelectedIds = selectedIds.concat(id)
     const conflicts = schedule.findConflicts(screening, nextSelectedIds.filter(item => item !== id), allScreenings)
-    const swapped = sameFilmSelectedIds.length > 0
     setActiveSelectedIds(nextSelectedIds, null)
     showToast(
-      swapped && conflicts.length
-        ? '已换场，时间重叠'
-        : swapped
-          ? '已换到这场'
-          : conflicts.length
-            ? '已加入，时间重叠'
-            : '已加入排片',
+      conflicts.length ? '已加入，时间重叠' : '已加入排片',
       1000
     )
   }
@@ -2306,7 +2709,7 @@ export default function FestivalWebApp() {
       const response = await fetch('/api/ai-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instruction: value, marks, nowMs: Date.now() })
+        body: JSON.stringify({ instruction: value, marks, selectedIds, nowMs: Date.now() })
       })
       const result = await response.json()
       if (!response.ok || !result.ok) throw new Error(result.message || result.error || 'AI 生成失败')
@@ -2398,13 +2801,19 @@ export default function FestivalWebApp() {
   const openPosterExport = () => {
     trackUsageEvent('export_poster', festivalName)
     setExportSheetOpen(false)
+    setPosterIncludePosters(false)
+    setPosterIncludePopularity(false)
     setPosterSheetOpen(true)
   }
 
-  const confirmPosterExport = () => {
-    const image = createPlanPosterImage(plan, {
+  const confirmPosterExport = async () => {
+    const image = await createPlanPosterImage(plan, {
       festivalName,
-      theme: posterTheme
+      theme: posterTheme,
+      includePosters: posterIncludePosters,
+      includePopularity: posterIncludePopularity,
+      posterSrcByFilmId,
+      popularity
     })
     if (image) {
       setPosterPreview(image)
@@ -2521,12 +2930,21 @@ export default function FestivalWebApp() {
           排片表
         </button>
       </nav>
+      {showScrollTop ? (
+        <button className="scroll-top-button" type="button" onClick={scrollToTop} aria-label="返回顶部" title="返回顶部">
+          <ArrowUpToLine aria-hidden="true" />
+        </button>
+      ) : null}
       <SmartPlanModal open={smartOpen} onClose={() => !smartLoading && setSmartOpen(false)} onSubmit={runSmartPlan} loading={smartLoading} progress={smartProgress} error={smartError} />
       <ExportActionSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} onPoster={openPosterExport} onText={openTextExport} />
       <PosterSheet
         open={posterSheetOpen}
         theme={posterTheme}
         setTheme={setPosterTheme}
+        includePosters={posterIncludePosters}
+        setIncludePosters={setPosterIncludePosters}
+        includePopularity={posterIncludePopularity}
+        setIncludePopularity={setPosterIncludePopularity}
         summary={`${plan.selected.length} 场 · ${formatMinutes(plan.totalMinutes)}`}
         onClose={() => setPosterSheetOpen(false)}
         onConfirm={confirmPosterExport}
@@ -2541,10 +2959,10 @@ export default function FestivalWebApp() {
       <ImportDialog mode={importMode} text={importText} onText={setImportText} onClose={() => setImportMode('')} onImport={importPlan} onCopy={copyExport} />
       <DetailModal
         film={detailFilm}
-        screenings={detailFilm ? allScreenings.filter(item => item.filmId === detailFilm.id) : []}
+        screenings={detailFilm ? schedule.findFilmScreenings(detailFilm, allScreenings) : []}
         allScreenings={allScreenings}
         selectedIds={selectedIds}
-        mark={detailFilm ? marks[detailFilm.id] || '' : ''}
+        mark={detailFilm ? schedule.getFilmMark(detailFilm, marks) || '' : ''}
         popularity={popularity}
         onClose={() => setDetailFilm(null)}
         onToggle={toggleScreening}
