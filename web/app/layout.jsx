@@ -6,6 +6,8 @@ export const metadata = {
   description: '电影节选片、挑场次和排片工具'
 }
 
+export const dynamic = 'force-dynamic'
+
 export default function RootLayout({ children }) {
   return (
     <html lang="zh-CN">

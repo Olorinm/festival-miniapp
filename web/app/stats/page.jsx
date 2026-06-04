@@ -83,7 +83,19 @@ export default async function StatsPage({ searchParams }) {
     )
   }
 
-  const summary = await getEventSummary({ festivalId, days: daysCount })
+  let summary
+  try {
+    summary = await getEventSummary({ festivalId, days: daysCount })
+  } catch (error) {
+    return (
+      <main className="stats-page">
+        <section className="stats-shell">
+          <h1>统计暂不可用</h1>
+          <p className="stats-muted">{String(error && error.message || error || 'summary failed').slice(0, 160)}</p>
+        </section>
+      </main>
+    )
+  }
   const days = summary.days || []
   const dailyMax = Math.max(...days.map(totalForDay), 0)
   const totalEvents = days.reduce((sum, day) => sum + totalForDay(day), 0)
@@ -107,6 +119,9 @@ export default async function StatsPage({ searchParams }) {
           </div>
           <div className="stats-meta">{daysCount} 天 · {summary.stored === 'redis' ? 'Redis' : 'Memory'}</div>
         </div>
+        {summary.fallbackError ? (
+          <p className="stats-muted">Redis 暂不可用，当前显示临时内存统计：{summary.fallbackError}</p>
+        ) : null}
 
         <div className="stats-metrics">
           <div className="stats-metric"><span>打开网页</span><strong>{visitors}</strong></div>

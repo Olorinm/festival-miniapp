@@ -8,8 +8,14 @@ const memory = globalThis.__festivalPopularityMemory || {
 globalThis.__festivalPopularityMemory = memory
 
 let redisClient = null
+let redisDisabledUntil = 0
 const MAX_SELECTION_IDS = 120
 const MAX_QUERY_IDS = 2000
+
+function disableRedisTemporarily(error) {
+  redisDisabledUntil = Date.now() + 10 * 60 * 1000
+  return String(error && error.message || error || 'redis unavailable').slice(0, 160)
+}
 
 function uniqueIds(ids, limit) {
   const seen = {}
@@ -30,16 +36,30 @@ function normalizeFestivalId(value) {
   return String(value || 'siff2026').replace(/[^\w.-]/g, '_').slice(0, 64)
 }
 
-function getRedis() {
-  const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL
-  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN
-  if (!redisUrl || !redisToken) {
+function redisConfig() {
+  return {
+    url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN
+  }
+}
+
+function hasRedisConfig() {
+  const config = redisConfig()
+  return !!(config.url && config.token)
+}
+
+function getRedis(options) {
+  if (!(options && options.ignoreDisabled) && redisDisabledUntil > Date.now()) {
+    return null
+  }
+  const config = redisConfig()
+  if (!config.url || !config.token) {
     return null
   }
   if (!redisClient) {
     redisClient = new Redis({
-      url: redisUrl,
-      token: redisToken
+      url: config.url,
+      token: config.token
     })
   }
   return redisClient
@@ -51,6 +71,14 @@ function screeningKey(festivalId, screeningId) {
 
 function filmKey(festivalId, filmId) {
   return `festival:${festivalId}:film:${filmId}:users`
+}
+
+function screeningCountKey(festivalId) {
+  return `festival:${festivalId}:screeningCounts`
+}
+
+function filmCountKey(festivalId) {
+  return `festival:${festivalId}:filmCounts`
 }
 
 function userKey(festivalId, anonUserId) {
@@ -119,10 +147,39 @@ function memorySync(payload) {
   }
 }
 
+function memoryGet(payload) {
+  const festivalId = normalizeFestivalId(payload.festivalId)
+  const screeningIds = uniqueIds(payload.screeningIds, MAX_QUERY_IDS)
+  const filmIds = uniqueIds(payload.filmIds, MAX_QUERY_IDS)
+  return {
+    screeningCounts: screeningIds.reduce((counts, id) => {
+      counts[id] = memory.screeningUsers.get(`${festivalId}:${id}`)?.size || 0
+      return counts
+    }, {}),
+    filmCounts: filmIds.reduce((counts, id) => {
+      counts[id] = memory.filmUsers.get(`${festivalId}:${id}`)?.size || 0
+      return counts
+    }, {})
+  }
+}
+
+function hmgetValue(values, id, index) {
+  if (Array.isArray(values)) {
+    return values[index]
+  }
+  if (values && typeof values === 'object') {
+    return values[id]
+  }
+  return undefined
+}
+
 async function redisSync(payload) {
   const redis = getRedis()
   if (!redis) {
-    return memorySync(payload)
+    return {
+      ...memorySync(payload),
+      stored: 'memory'
+    }
   }
   const festivalId = normalizeFestivalId(payload.festivalId)
   const anonUserId = String(payload.anonUserId || '').trim()
@@ -134,39 +191,65 @@ async function redisSync(payload) {
     }
     return map
   }, {})
-  const previous = await redis.get(userKey(festivalId, anonUserId)) || { screeningIds: [], filmIds: [] }
+  let previous
+  try {
+    previous = await redis.get(userKey(festivalId, anonUserId)) || { screeningIds: [], filmIds: [] }
+  } catch (error) {
+    return {
+      ...memorySync(payload),
+      stored: 'memory',
+      fallbackError: disableRedisTemporarily(error)
+    }
+  }
   const nextFilmIds = uniqueIds(nextScreeningIds.map(id => filmByScreening[id]).filter(Boolean))
-
+  const previousScreeningIds = uniqueIds(previous.screeningIds, MAX_SELECTION_IDS)
+  const previousFilmIds = uniqueIds(previous.filmIds, MAX_SELECTION_IDS)
+  const previousScreeningSet = new Set(previousScreeningIds)
+  const previousFilmSet = new Set(previousFilmIds)
+  const nextScreeningSet = new Set(nextScreeningIds)
+  const nextFilmSet = new Set(nextFilmIds)
+  const removedScreeningIds = previousScreeningIds.filter(id => !nextScreeningSet.has(id))
+  const removedFilmIds = previousFilmIds.filter(id => !nextFilmSet.has(id))
+  const addedScreeningIds = nextScreeningIds.filter(id => !previousScreeningSet.has(id))
+  const addedFilmIds = nextFilmIds.filter(id => !previousFilmSet.has(id))
   const pipeline = redis.pipeline()
-  uniqueIds(previous.screeningIds, MAX_SELECTION_IDS).forEach(id => pipeline.srem(screeningKey(festivalId, id), anonUserId))
-  uniqueIds(previous.filmIds, MAX_SELECTION_IDS).forEach(id => pipeline.srem(filmKey(festivalId, id), anonUserId))
+  previousScreeningIds.forEach(id => pipeline.srem(screeningKey(festivalId, id), anonUserId))
+  previousFilmIds.forEach(id => pipeline.srem(filmKey(festivalId, id), anonUserId))
   nextScreeningIds.forEach(id => pipeline.sadd(screeningKey(festivalId, id), anonUserId))
   nextFilmIds.forEach(id => pipeline.sadd(filmKey(festivalId, id), anonUserId))
+  removedScreeningIds.forEach(id => pipeline.hincrby(screeningCountKey(festivalId), id, -1))
+  removedFilmIds.forEach(id => pipeline.hincrby(filmCountKey(festivalId), id, -1))
+  addedScreeningIds.forEach(id => pipeline.hincrby(screeningCountKey(festivalId), id, 1))
+  addedFilmIds.forEach(id => pipeline.hincrby(filmCountKey(festivalId), id, 1))
   pipeline.set(userKey(festivalId, anonUserId), { screeningIds: nextScreeningIds, filmIds: nextFilmIds })
-  await pipeline.exec()
+  try {
+    await pipeline.exec()
+  } catch (error) {
+    return {
+      ...memorySync(payload),
+      stored: 'memory',
+      fallbackError: disableRedisTemporarily(error)
+    }
+  }
 
-  return redisGet({
+  const counts = await redisGet({
     festivalId,
     screeningIds: uniqueIds([].concat(payload.queryScreeningIds || [], nextScreeningIds), MAX_QUERY_IDS),
     filmIds: uniqueIds([].concat(payload.queryFilmIds || [], nextFilmIds), MAX_QUERY_IDS)
   })
+  return counts.stored === 'memory' ? counts : { ...counts, stored: 'redis' }
 }
 
 async function redisGet(payload) {
-  const redis = getRedis()
+  const redisConfigured = hasRedisConfig()
+  const redis = getRedis({ ignoreDisabled: true })
   if (!redis) {
-    const festivalId = normalizeFestivalId(payload.festivalId)
-    const screeningIds = uniqueIds(payload.screeningIds, MAX_QUERY_IDS)
-    const filmIds = uniqueIds(payload.filmIds, MAX_QUERY_IDS)
+    if (redisConfigured) {
+      throw new Error('redis temporarily unavailable')
+    }
     return {
-      screeningCounts: screeningIds.reduce((counts, id) => {
-        counts[id] = memory.screeningUsers.get(`${festivalId}:${id}`)?.size || 0
-        return counts
-      }, {}),
-      filmCounts: filmIds.reduce((counts, id) => {
-        counts[id] = memory.filmUsers.get(`${festivalId}:${id}`)?.size || 0
-        return counts
-      }, {})
+      ...memoryGet(payload),
+      stored: 'memory'
     }
   }
 
@@ -174,18 +257,43 @@ async function redisGet(payload) {
   const screeningIds = uniqueIds(payload.screeningIds, MAX_QUERY_IDS)
   const filmIds = uniqueIds(payload.filmIds, MAX_QUERY_IDS)
   const pipeline = redis.pipeline()
+  if (screeningIds.length) {
+    pipeline.hmget(screeningCountKey(festivalId), ...screeningIds)
+  }
+  if (filmIds.length) {
+    pipeline.hmget(filmCountKey(festivalId), ...filmIds)
+  }
   screeningIds.forEach(id => pipeline.scard(screeningKey(festivalId, id)))
   filmIds.forEach(id => pipeline.scard(filmKey(festivalId, id)))
-  const result = await pipeline.exec()
+  let result
+  try {
+    result = await pipeline.exec()
+  } catch (error) {
+    if (redisConfigured) {
+      throw error
+    }
+    return {
+      ...memoryGet(payload),
+      stored: 'memory',
+      fallbackError: disableRedisTemporarily(error)
+    }
+  }
   const screeningCounts = {}
   const filmCounts = {}
+  let resultIndex = 0
+  const screeningHashValues = screeningIds.length ? result[resultIndex++] : []
+  const filmHashValues = filmIds.length ? result[resultIndex++] : []
   screeningIds.forEach((id, index) => {
-    screeningCounts[id] = Number(result[index]) || 0
+    const hashCount = Math.max(0, Number(hmgetValue(screeningHashValues, id, index)) || 0)
+    const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
+    screeningCounts[id] = Math.max(hashCount, setCount)
   })
   filmIds.forEach((id, index) => {
-    filmCounts[id] = Number(result[screeningIds.length + index]) || 0
+    const hashCount = Math.max(0, Number(hmgetValue(filmHashValues, id, index)) || 0)
+    const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
+    filmCounts[id] = Math.max(hashCount, setCount)
   })
-  return { screeningCounts, filmCounts }
+  return { screeningCounts, filmCounts, stored: 'redis' }
 }
 
 async function syncPopularity(payload) {

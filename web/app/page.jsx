@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react'
+import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2, RefreshCw } from 'lucide-react'
 import festival from '../lib/festival'
 import schedule from '../lib/schedule.cjs'
 
@@ -45,6 +45,8 @@ const POSTER_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "PingFang SC", "H
 const APP_SHARE_NAME = '赶场愉快'
 const GITHUB_URL = 'https://github.com/Olorinm/festival-miniapp'
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
+const POPULARITY_RANK_REFRESH_MS = 5 * 60 * 1000
+const POPULARITY_RANK_LIMIT = 20
 const POSTER_THEMES = [
   {
     key: 'list',
@@ -477,6 +479,31 @@ function formatVenueLine(item) {
   return compact([item.cinema, item.hall])
 }
 
+function formatRankUpdatedAt(value) {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return '打开热度榜时更新'
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `截至 ${hour}:${minute}`
+}
+
+function buildPopularityRows(screenings, counts, limit = POPULARITY_RANK_LIMIT) {
+  const countMap = counts && typeof counts === 'object' ? counts : {}
+  return (Array.isArray(screenings) ? screenings : [])
+    .map(item => ({
+      ...item,
+      popularityCount: Math.max(0, Number(countMap[item.id]) || 0)
+    }))
+    .filter(item => item.popularityCount > 0)
+    .sort((a, b) => b.popularityCount - a.popularityCount || compareText(a.date || '', b.date || '') || (a.startMinutes || 0) - (b.startMinutes || 0) || compareText(a.cnTitle, b.cnTitle))
+    .slice(0, limit)
+}
+
+function hasPositivePopularityCounts(counts) {
+  return Object.values(counts && typeof counts === 'object' ? counts : {})
+    .some(value => Number(value) > 0)
+}
+
 function formatPlanText(plan, options) {
   const source = options || {}
   const lines = [
@@ -652,7 +679,11 @@ function buildPoster(plan, options) {
         posterSlot ? posterSlot.height + 12 : 0,
         26 + titleLines.length * titleLineHeight + venueLines.length * venueLineHeight
       )
-      const posterY = y + Math.max(0, Math.round((itemHeight - (posterSlot?.height || 0)) / 2) - 2)
+      const posterY = posterSlot
+        ? layout === 'gallery'
+          ? Math.round((y - 18) + Math.max(0, ((itemHeight + 12) - posterSlot.height) / 2))
+          : y + Math.max(0, Math.round((itemHeight - posterSlot.height) / 2) - 2)
+        : 0
 
       blocks.push({
         type: 'item',
@@ -1795,7 +1826,7 @@ function PlanPage({
   openFilm,
   popularity
 }) {
-  const summary = activeScheme ? `${activeScheme.name} · ${plan.selected.length} 场${plan.totalMinutes ? ` · ${schedule.runtimeText(plan.totalMinutes)}` : ''}` : '方案 1 · 0 场'
+  const summary = `${plan.selected.length} 场${plan.totalMinutes ? ` · ${schedule.runtimeText(plan.totalMinutes)}` : ''}`
   const [conflictsExpanded, setConflictsExpanded] = useState(false)
   const longPressTimerRef = useRef(null)
   const longPressedRef = useRef(false)
@@ -1931,6 +1962,71 @@ function PlanPage({
           ))}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmId, loading, error, updatedAt, onRefresh, onAbout, openFilm }) {
+  const rows = useMemo(() => buildPopularityRows(screenings, popularity), [screenings, popularity])
+  const max = rows[0]?.popularityCount || 1
+  const meta = `来自「${APP_SHARE_NAME}」用户的真实选场数据 · ${formatRankUpdatedAt(updatedAt)}`
+
+  return (
+    <div className="page popularity-page">
+      <TopNav title="热度榜" festivalName={festivalName} onAbout={onAbout} />
+      <div className="popularity-hero">
+        <div className="popularity-brand">
+          <span className="popularity-brand-dot" />
+          <span>{APP_SHARE_NAME}</span>
+        </div>
+        <div className="popularity-title-row">
+          <h1>{festivalName}</h1>
+          <span>热度榜</span>
+        </div>
+        <div className="popularity-meta">{meta}</div>
+        <button className={`popularity-refresh ${loading ? 'is-loading' : ''}`} type="button" onClick={onRefresh} disabled={loading}>
+          <RefreshCw aria-hidden="true" />
+          <span>{loading ? '更新中' : '刷新'}</span>
+        </button>
+      </div>
+
+      {error ? <div className="popularity-error">{error}</div> : null}
+
+      {rows.length ? (
+        <div className="popularity-list">
+          {rows.map((item, index) => {
+            const rank = index + 1
+            const isTop = rank <= 3
+            const width = Math.max(4, Math.round((item.popularityCount / max) * 100))
+            const src = posterSrcByFilmId[item.filmId] || String(item.posterSrc || '').replace(/^\/assets\/posters\//, '/posters/')
+            return (
+              <button className="popularity-row" type="button" key={item.id} onClick={() => openFilm(item.filmId)}>
+                <span className={`popularity-rank ${isTop ? 'is-top' : ''}`}>{rank}</span>
+                <span className={`popularity-poster ${src ? '' : 'is-placeholder'}`}>
+                  {src ? <img src={src} alt={item.cnTitle} loading="lazy" /> : <span>{item.cnTitle.replace(/\s*\(4K\)/, '')}</span>}
+                </span>
+                <span className="popularity-info">
+                  <span className="popularity-film-title">{item.cnTitle}</span>
+                  <span className="popularity-time">{item.dayLabel} {item.timeRange}</span>
+                  <span className="popularity-venue">{formatVenueLine(item)}</span>
+                </span>
+                <span className="popularity-count">
+                  <span className="popularity-count-main">{item.popularityCount}</span>
+                  <span className="popularity-count-unit">人已排</span>
+                  <span className="popularity-bar">
+                    <span className={isTop ? 'is-top' : ''} style={{ width: `${width}%` }} />
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="popularity-empty">
+          <div className="empty-title">{loading ? '正在更新热度' : '暂无热度数据'}</div>
+          <div className="empty-sentence">{loading ? '稍等一下，榜单很快就来。' : '等有用户排片后，这里会显示最热门的场次。'}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2137,8 +2233,38 @@ function ImagePreview({ image, title = '图片预览', hint = '长按图片保�
   )
 }
 
+function externalRatingHref(film, key) {
+  if (key === 'douban') {
+    if (film.doubanUrl) return film.doubanUrl
+    if (film.doubanId) return `https://movie.douban.com/subject/${film.doubanId}/`
+  }
+  if (key === 'imdb') {
+    if (film.imdbUrl) return film.imdbUrl
+    if (film.imdbId) return `https://www.imdb.com/title/${film.imdbId}/`
+  }
+  return ''
+}
+
+function detailRatingItems(film) {
+  const items = schedule.filmRatingItems(film).map(item => ({
+    ...item,
+    href: externalRatingHref(film, item.key)
+  }))
+  const hasDoubanRating = items.some(item => item.key === 'douban')
+  const doubanHref = externalRatingHref(film, 'douban')
+  if (doubanHref && !hasDoubanRating) {
+    items.unshift({
+      key: 'douban',
+      label: '豆瓣',
+      value: '暂无评分',
+      href: doubanHref
+    })
+  }
+  return items
+}
+
 function DetailRatingItem({ film, item }) {
-  const href = item.key === 'douban' ? film.doubanUrl : item.key === 'imdb' ? film.imdbUrl : ''
+  const href = item.href || externalRatingHref(film, item.key)
   const className = `detail-rating-item rating-${item.key}`
   const content = (
     <>
@@ -2194,7 +2320,7 @@ function DetailModal({ film, screenings, allScreenings, selectedIds, mark, popul
   const interestWord = ['未标记', '待定', '想看', '必看'][interestRank] || '未标记'
   const recommendation = film.recommendation || film.doulistComment || film.logline || ''
   const synopsis = filmSynopsis(film)
-  const ratingItems = schedule.filmRatingItems(film)
+  const ratingItems = detailRatingItems(film)
   const infoRows = buildDetailInfoRows(film)
   const metaRows = buildDetailMetaRows(film)
 
@@ -2422,7 +2548,8 @@ function Toast({ message }) {
 
 export default function FestivalWebApp() {
   const films = festival.films || []
-  const festivalName = festival.festivalMeta?.name || 'SIFF 2026'
+  const festivalId = festival.festivalMeta?.name || 'SIFF 2026'
+  const festivalName = festival.festivalMeta?.displayName || festivalId
   const [tab, setTab] = useState('films')
   const [query, setQuery] = useState('')
   const [marks, setMarks] = useStoredState('marks', {})
@@ -2446,20 +2573,25 @@ export default function FestivalWebApp() {
   const [posterPreview, setPosterPreview] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [popularityRankCounts, setPopularityRankCounts] = useState({})
+  const [popularityRankUpdatedAt, setPopularityRankUpdatedAt] = useState(0)
+  const [popularityRankLoading, setPopularityRankLoading] = useState(false)
+  const [popularityRankError, setPopularityRankError] = useState('')
   const [schemeDialog, setSchemeDialog] = useState(null)
   const [schemeNameDraft, setSchemeNameDraft] = useState('')
   const [toast, setToast] = useState('')
   const [showScrollTop, setShowScrollTop] = useState(false)
   const toastTimerRef = useRef(null)
-  const scrollPositionsRef = useRef({ films: 0, schedule: 0, plan: 0 })
+  const scrollPositionsRef = useRef({ films: 0, schedule: 0, plan: 0, popularity: 0 })
   const popularitySyncSignatureRef = useRef('')
+  const popularityRankRequestRef = useRef(null)
 
   const switchTab = nextTab => {
     if (nextTab === tab) return
     if (typeof window !== 'undefined') {
       scrollPositionsRef.current[tab] = window.scrollY || 0
     }
-    trackUsageEvent(`tab_${nextTab}`, festivalName)
+    trackUsageEvent(`tab_${nextTab}`, festivalId)
     setTab(nextTab)
     if (typeof window !== 'undefined') {
       window.requestAnimationFrame(() => {
@@ -2522,6 +2654,35 @@ export default function FestivalWebApp() {
     filmId: screeningFilmMap[id] || ''
   })), [selectedIdsSignature, screeningFilmMap])
   const plan = useMemo(() => schedule.buildPlan(selectedIds, allScreenings), [selectedIds, allScreenings])
+  const popularityRankSource = hasPositivePopularityCounts(popularityRankCounts) ? popularityRankCounts : popularity
+
+  const refreshPopularityRank = (force = false) => {
+    if (!allScreeningIds.length) return
+    const now = Date.now()
+    if (popularityRankRequestRef.current) return
+    if (!force && hasPositivePopularityCounts(popularityRankCounts) && popularityRankUpdatedAt && now - popularityRankUpdatedAt < POPULARITY_RANK_REFRESH_MS) return
+    setPopularityRankLoading(true)
+    setPopularityRankError('')
+    const request = fetch('/api/popularity/get', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        festivalId,
+        screeningIds: allScreeningIds
+      })
+    }).then(res => res.json()).then(result => {
+      if (!result.ok) throw new Error(result.error || '热度更新失败')
+      const nextCounts = result.screeningCounts || {}
+      setPopularityRankCounts(nextCounts)
+      setPopularityRankUpdatedAt(hasPositivePopularityCounts(nextCounts) ? Date.now() : 0)
+    }).catch(() => {
+      setPopularityRankError('热度更新失败，稍后再试')
+    }).finally(() => {
+      popularityRankRequestRef.current = null
+      setPopularityRankLoading(false)
+    })
+    popularityRankRequestRef.current = request
+  }
 
   useEffect(() => {
     if (!activeSchemeId && normalizedSchemes[0]) setActiveSchemeId(normalizedSchemes[0].id)
@@ -2532,12 +2693,37 @@ export default function FestivalWebApp() {
   }, [])
 
   useEffect(() => {
+    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog)
+    if (!hasBlockingOverlay || typeof document === 'undefined') return
+    const body = document.body
+    const scrollY = window.scrollY || 0
+    const previousOverflow = body.style.overflow
+    const previousTouchAction = body.style.touchAction
+    const previousPosition = body.style.position
+    const previousTop = body.style.top
+    const previousWidth = body.style.width
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.width = '100%'
+    return () => {
+      body.style.overflow = previousOverflow
+      body.style.touchAction = previousTouchAction
+      body.style.position = previousPosition
+      body.style.top = previousTop
+      body.style.width = previousWidth
+      window.scrollTo(0, scrollY)
+    }
+  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog])
+
+  useEffect(() => {
     setMarks(prev => applyFilmMarkAliases(films, prev))
   }, [films, marks, setMarks])
 
   useEffect(() => {
-    trackUsageEvent('app_open', festivalName)
-  }, [festivalName])
+    trackUsageEvent('app_open', festivalId)
+  }, [festivalId])
 
   useEffect(() => {
     const updateScrollTop = () => {
@@ -2549,12 +2735,16 @@ export default function FestivalWebApp() {
   }, [])
 
   useEffect(() => {
+    if (tab === 'popularity') refreshPopularityRank(false)
+  }, [tab, allScreeningIdsSignature, festivalId])
+
+  useEffect(() => {
     if (scheduleFieldConfig.popularity === false) {
       setPopularity({})
       fetch('/api/popularity/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ festivalId: festivalName, anonUserId: getAnonUserId(), screeningIds: [], queryScreeningIds: [], screenings: [] })
+        body: JSON.stringify({ festivalId, anonUserId: getAnonUserId(), screeningIds: [], queryScreeningIds: [], screenings: [] })
       }).catch(() => {})
       return
     }
@@ -2564,7 +2754,7 @@ export default function FestivalWebApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          festivalId: festivalName,
+          festivalId,
           screeningIds: allScreeningIds
         })
       }).then(res => res.json()).then(result => {
@@ -2572,11 +2762,11 @@ export default function FestivalWebApp() {
       }).catch(() => {})
     }, 1200)
     return () => window.clearTimeout(timer)
-  }, [allScreeningIdsSignature, festivalName, scheduleFieldConfig.popularity])
+  }, [allScreeningIdsSignature, festivalId, scheduleFieldConfig.popularity])
 
   useEffect(() => {
     if (scheduleFieldConfig.popularity === false) return
-    const syncSignature = `${festivalName}|${selectedIdsSignature}`
+    const syncSignature = `${festivalId}|${selectedIdsSignature}`
     if (!selectedIds.length && !popularitySyncSignatureRef.current) return
     if (popularitySyncSignatureRef.current === syncSignature) return
     popularitySyncSignatureRef.current = syncSignature
@@ -2585,7 +2775,7 @@ export default function FestivalWebApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          festivalId: festivalName,
+          festivalId,
           anonUserId: getAnonUserId(),
           screeningIds: selectedIds,
           queryScreeningIds: selectedIds,
@@ -2598,7 +2788,7 @@ export default function FestivalWebApp() {
       }).catch(() => {})
     }, 1500)
     return () => window.clearTimeout(timer)
-  }, [selectedIdsSignature, selectedScreeningPayload, festivalName, scheduleFieldConfig.popularity])
+  }, [selectedIdsSignature, selectedScreeningPayload, festivalId, scheduleFieldConfig.popularity])
 
   const setActiveSelectedIds = (ids, smartPlanMeta) => {
     const targetId = activeScheme?.id || normalizedSchemes[0]?.id || DEFAULT_SCHEME_ID
@@ -2618,12 +2808,12 @@ export default function FestivalWebApp() {
     if (!screening) return
     const selected = selectedIds.includes(id)
     if (selected) {
-      trackUsageEvent('unselect_screening', festivalName)
+      trackUsageEvent('unselect_screening', festivalId)
       setActiveSelectedIds(selectedIds.filter(item => item !== id), null)
       showToast('已移除', 1000)
       return
     }
-    trackUsageEvent('select_screening', festivalName)
+    trackUsageEvent('select_screening', festivalId)
     const nextSelectedIds = selectedIds.concat(id)
     const conflicts = schedule.findConflicts(screening, nextSelectedIds.filter(item => item !== id), allScreenings)
     setActiveSelectedIds(nextSelectedIds, null)
@@ -2634,7 +2824,7 @@ export default function FestivalWebApp() {
   }
 
   const setMark = (filmId, mark) => {
-    trackUsageEvent(mark ? 'mark_film' : 'unmark_film', festivalName)
+    trackUsageEvent(mark ? 'mark_film' : 'unmark_film', festivalId)
     setMarks(prev => {
       const next = { ...(prev || {}) }
       if (mark) next[filmId] = mark
@@ -2695,7 +2885,7 @@ export default function FestivalWebApp() {
   const runSmartPlan = async instruction => {
     const value = instruction.trim()
     if (!value) return
-    trackUsageEvent('smart_submit', festivalName)
+    trackUsageEvent('smart_submit', festivalId)
     const timers = []
     setSmartLoading(true)
     setSmartError('')
@@ -2722,10 +2912,10 @@ export default function FestivalWebApp() {
         createdAt: Date.now()
       })
       setSmartOpen(false)
-      trackUsageEvent('smart_success', festivalName)
+      trackUsageEvent('smart_success', festivalId)
       switchTab('plan')
     } catch (error) {
-      trackUsageEvent('smart_error', festivalName)
+      trackUsageEvent('smart_error', festivalId)
       setSmartError(String(error?.message || error || 'AI 生成失败'))
     } finally {
       timers.forEach(timer => window.clearTimeout(timer))
@@ -2737,36 +2927,37 @@ export default function FestivalWebApp() {
   const openFilm = filmOrId => {
     const film = typeof filmOrId === 'string' ? filmMap[filmOrId] : filmOrId
     if (film) {
-      trackUsageEvent('film_detail_open', festivalName)
+      trackUsageEvent('film_detail_open', festivalId)
       setDetailFilm(film)
     }
   }
 
   const openSmart = () => {
-    trackUsageEvent('smart_open', festivalName)
+    trackUsageEvent('smart_open', festivalId)
     setSmartOpen(true)
   }
 
   const openAbout = () => {
-    trackUsageEvent('about_open', festivalName)
+    trackUsageEvent('about_open', festivalId)
     setAboutOpen(true)
   }
 
   const openImport = () => {
-    trackUsageEvent('import_open', festivalName)
+    trackUsageEvent('import_open', festivalId)
     setImportText('')
     setImportMode('import')
   }
 
   const openCommunityQr = () => {
-    trackUsageEvent('community_open', festivalName)
+    trackUsageEvent('community_open', festivalId)
     setImagePreview({ url: '/community/wechat-feedback-group.jpg', alt: '赶场愉快反馈群二维码' })
   }
 
   const exportPayload = {
     type: 'festival-plan',
     version: 1,
-    festival: festivalName,
+    festival: festivalId,
+    festivalName,
     activeSchemeId: activeScheme?.id || '',
     schemes: normalizedSchemes,
     marks,
@@ -2778,12 +2969,12 @@ export default function FestivalWebApp() {
       showToast('先加入场次')
       return
     }
-    trackUsageEvent('export_open', festivalName)
+    trackUsageEvent('export_open', festivalId)
     setExportSheetOpen(true)
   }
 
   const openTextExport = async () => {
-    trackUsageEvent('export_text', festivalName)
+    trackUsageEvent('export_text', festivalId)
     setExportSheetOpen(false)
     const text = formatPlanText(plan, {
       festivalName,
@@ -2799,7 +2990,7 @@ export default function FestivalWebApp() {
   }
 
   const openPosterExport = () => {
-    trackUsageEvent('export_poster', festivalName)
+    trackUsageEvent('export_poster', festivalId)
     setExportSheetOpen(false)
     setPosterIncludePosters(false)
     setPosterIncludePopularity(false)
@@ -2832,7 +3023,7 @@ export default function FestivalWebApp() {
         setSchemes(prev => (Array.isArray(prev) ? prev : []).concat(scheme))
         setActiveSchemeId(scheme.id)
         setImportMode('')
-        trackUsageEvent('import_success', festivalName)
+        trackUsageEvent('import_success', festivalId)
         switchTab('plan')
         return
       }
@@ -2849,7 +3040,7 @@ export default function FestivalWebApp() {
       setActiveSchemeId(payload.activeSchemeId || nextSchemes[0]?.id || DEFAULT_SCHEME_ID)
       setMarks(payload.marks && typeof payload.marks === 'object' ? payload.marks : {})
       setImportMode('')
-      trackUsageEvent('import_success', festivalName)
+      trackUsageEvent('import_success', festivalId)
       switchTab('plan')
     } catch (error) {
       showToast(error.message || '导入失败')
@@ -2916,6 +3107,20 @@ export default function FestivalWebApp() {
           popularity={popularity}
         />
       ) : null}
+      {tab === 'popularity' ? (
+        <PopularityPage
+          festivalName={festivalName}
+          screenings={allScreenings}
+          popularity={popularityRankSource}
+          posterSrcByFilmId={posterSrcByFilmId}
+          loading={popularityRankLoading}
+          error={popularityRankError}
+          updatedAt={popularityRankUpdatedAt}
+          onRefresh={() => refreshPopularityRank(true)}
+          onAbout={openAbout}
+          openFilm={openFilm}
+        />
+      ) : null}
       <nav className="tabbar">
         <button className={tab === 'films' ? 'is-active' : ''} type="button" onClick={() => switchTab('films')}>
           <img className="tab-icon" src={tab === 'films' ? '/tab/films-active.png' : '/tab/films.png'} alt="" />
@@ -2928,6 +3133,10 @@ export default function FestivalWebApp() {
         <button className={tab === 'plan' ? 'is-active' : ''} type="button" onClick={() => switchTab('plan')}>
           <img className="tab-icon" src={tab === 'plan' ? '/tab/plan-active.png' : '/tab/plan.png'} alt="" />
           排片表
+        </button>
+        <button className={tab === 'popularity' ? 'is-active' : ''} type="button" onClick={() => switchTab('popularity')}>
+          <img className="tab-icon" src={tab === 'popularity' ? '/tab/popularity-active.png' : '/tab/popularity.png'} alt="" />
+          热度榜
         </button>
       </nav>
       {showScrollTop ? (

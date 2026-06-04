@@ -1,4 +1,8 @@
 const { interestOptions: fallbackInterestOptions } = require('./festival')
+const commuteRoutes = require('./commute-routes.cjs')
+
+const MAX_WALKING_COMMUTE_MIN = 75
+const MAX_WALKING_ROUTE_RATIO = 3
 
 const noInterest = {
   key: 'none',
@@ -22,6 +26,32 @@ function getInterestMeta(key) {
   return interestOptions.find(item => item.key === key) || noInterest
 }
 
+function markIdsForFilm(film) {
+  const ids = [film && film.id]
+    .concat(Array.isArray(film && film.markAliasFilmIds) ? film.markAliasFilmIds : [])
+    .filter(Boolean)
+  return Array.from(new Set(ids))
+}
+
+function getFilmMark(film, filmMarks) {
+  const marks = filmMarks || {}
+  const markedId = markIdsForFilm(film).find(id => marks[id])
+  return markedId ? marks[markedId] : (film && film.defaultInterest)
+}
+
+function getFilmInterest(film, filmMarks) {
+  return getInterestMeta(getFilmMark(film, filmMarks))
+}
+
+function resolveScreeningInterest(film, filmById, filmMarks) {
+  const ids = [film.id].concat(Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [])
+  return ids.reduce((best, id) => {
+    const sourceFilm = id === film.id ? film : filmById.get(id)
+    const interest = getFilmInterest(sourceFilm, filmMarks)
+    return interest.rank > best.rank ? interest : best
+  }, noInterest)
+}
+
 function toMinutes(time) {
   const parts = String(time).split(':')
   const hour = Number(parts[0] || 0)
@@ -40,11 +70,123 @@ function byScreeningTime(a, b) {
   return dateOrder || toMinutes(a.start) - toMinutes(b.start)
 }
 
+function routeKey(from, to) {
+  return `${from}__${to}`
+}
+
+function commutePairKey(a, b) {
+  return [a, b].sort().join('__')
+}
+
+function validRoute(route) {
+  return route && !route.error ? route : null
+}
+
+function usableWalkingRoute(route, directDistance) {
+  const walking = validRoute(route)
+  if (!walking) {
+    return null
+  }
+  const directKm = numericValue(directDistance)
+  const walkingKm = numericValue(walking.distanceKm)
+  const walkingMin = numericValue(walking.durationMin)
+  if (walkingMin > MAX_WALKING_COMMUTE_MIN) {
+    return null
+  }
+  if (directKm && walkingKm && walkingKm / directKm > MAX_WALKING_ROUTE_RATIO) {
+    return null
+  }
+  return walking
+}
+
+function formatCommuteDistance(value) {
+  const distance = numericValue(value)
+  if (!distance) {
+    return ''
+  }
+  if (distance < 10) {
+    return `${distance.toFixed(1).replace(/\.0$/, '')}km`
+  }
+  return `${Math.round(distance)}km`
+}
+
+function formatCommuteDuration(value) {
+  const minutes = Math.round(numericValue(value))
+  return minutes > 0 ? `${minutes}分` : ''
+}
+
+function makeCommuteMode(key, label, route) {
+  const duration = formatCommuteDuration(route && route.durationMin)
+  if (!duration) {
+    return null
+  }
+  const icons = {
+    transit: '🚌',
+    cycling: '🚲',
+    walking: '🚶'
+  }
+  return {
+    key,
+    label,
+    durationMin: Math.round(numericValue(route.durationMin)),
+    distanceKm: numericValue(route.distanceKm),
+    text: `${icons[key] || ''}${duration}`
+  }
+}
+
+function commuteBetween(fromScreening, toScreening) {
+  if (!fromScreening || !toScreening || fromScreening.date !== toScreening.date) {
+    return null
+  }
+
+  const from = firstText(fromScreening.cinema)
+  const to = firstText(toScreening.cinema)
+  if (!from || !to) {
+    return null
+  }
+
+  if (from === to) {
+    return {
+      kind: 'same',
+      from,
+      to,
+      distanceText: '同影院',
+      modes: []
+    }
+  }
+
+  const directDistance = numericValue(commuteRoutes.direct && commuteRoutes.direct[commutePairKey(from, to)])
+  const transit = validRoute(commuteRoutes.transit && commuteRoutes.transit[routeKey(from, to)])
+  const walking = usableWalkingRoute(commuteRoutes.walking && commuteRoutes.walking[commutePairKey(from, to)], directDistance)
+  const cycling = validRoute(commuteRoutes.cycling && commuteRoutes.cycling[commutePairKey(from, to)])
+  const modes = walking
+    ? [makeCommuteMode('transit', '公交', transit), makeCommuteMode('walking', '步行', walking)].filter(Boolean)
+    : [makeCommuteMode('transit', '公交', transit), makeCommuteMode('cycling', '骑车', cycling)].filter(Boolean)
+
+  if (!modes.length) {
+    return null
+  }
+
+  const distanceText = formatCommuteDistance(directDistance)
+
+  return {
+    kind: walking ? 'near' : 'far',
+    from,
+    to,
+    distanceText,
+    modes
+  }
+}
+
 function buildScreenings(films, marks) {
   const filmMarks = marks || {}
+  const filmById = new Map(films.map(film => [film.id, film]))
   return films
     .reduce((list, film) => {
-      const interest = getInterestMeta(filmMarks[film.id] || film.defaultInterest)
+      const memberFilms = Array.isArray(film.memberFilmIds)
+        ? film.memberFilmIds.map(id => filmById.get(id)).filter(Boolean)
+        : []
+      const interest = resolveScreeningInterest(film, filmById, filmMarks)
       const interestKey = interest.key
       const rows = film.screenings.map(screening => {
         const ticket = sanitizeTicketText(screening.ticket)
@@ -62,8 +204,12 @@ function buildScreenings(films, marks) {
           cardMeta: compactMeta([filmCoreMeta(film), filmDirector(film)]),
           sectionLabel: filmSection(film),
           ratingSummary: filmRatingSummary(film),
+          synopsis: filmSynopsis(film),
           doubanRating: film.doubanRating,
           imdbRating: film.imdbRating,
+          memberFilmIds: Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [],
+          memberCnTitles: Array.isArray(film.memberCnTitles) ? film.memberCnTitles : [],
+          programType: film.programType || '',
           interestKey,
           interest,
           timeRange: `${screening.start}-${screening.end}`,
@@ -78,6 +224,15 @@ function buildScreenings(films, marks) {
             filmSection(film),
             filmCountry(film),
             filmGenre(film),
+            filmSynopsis(film),
+            film.memberCnTitles,
+            memberFilms.map(member => [
+              filmDisplayTitle(member),
+              filmEnTitle(member),
+              filmDirector(member),
+              filmSection(member),
+              filmGenre(member)
+            ].join(' ')),
             screening.cinema,
             screening.hall
           ].join(' ').toLowerCase(),
@@ -148,6 +303,10 @@ function filmImdbId(film) {
 
 function filmAwards(film) {
   return firstText([film.awards, film.awardText])
+}
+
+function filmSynopsis(film) {
+  return firstText([film && film.synopsis, film && film.tmdbOverview, film && film.overview])
 }
 
 function filmCountry(film) {
@@ -258,6 +417,19 @@ function findScreening(screenings, screeningId) {
   return screenings.find(screening => screening.id === screeningId)
 }
 
+function isRelatedScreeningForFilm(screening, film) {
+  if (!screening || !film) {
+    return false
+  }
+  return screening.filmId === film.id ||
+    (film.mappedProgramFilmId && screening.filmId === film.mappedProgramFilmId) ||
+    (Array.isArray(screening.memberFilmIds) && screening.memberFilmIds.includes(film.id))
+}
+
+function findFilmScreenings(film, allScreenings) {
+  return (allScreenings || []).filter(screening => isRelatedScreeningForFilm(screening, film))
+}
+
 function hasOverlap(a, b) {
   if (!a || !b || a.id === b.id || a.date !== b.date) {
     return false
@@ -355,6 +527,7 @@ module.exports = {
   buildPlan,
   buildScreenings,
   collectStats,
+  commuteBetween,
   compactMeta,
   filmAwards,
   filmCast,
@@ -371,12 +544,16 @@ module.exports = {
   filmRuntimeMinutes,
   filmScreeningMeta,
   filmSection,
+  filmSynopsis,
   filmYear,
   findConflicts,
+  findFilmScreenings,
   findFilm,
   findScreening,
   firstText,
   formatRatingCount,
+  getFilmInterest,
+  getFilmMark,
   getInterestMeta,
   groupByDay,
   runtimeText

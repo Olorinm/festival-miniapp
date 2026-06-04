@@ -6,6 +6,7 @@ const EVENT_NAMES = [
   'tab_films',
   'tab_schedule',
   'tab_plan',
+  'tab_popularity',
   'film_detail_open',
   'mark_film',
   'unmark_film',
@@ -30,8 +31,17 @@ const memory = globalThis.__festivalEventStatsMemory || new Map()
 globalThis.__festivalEventStatsMemory = memory
 
 let redisClient = null
+let redisDisabledUntil = 0
+
+function disableRedisTemporarily(error) {
+  redisDisabledUntil = Date.now() + 10 * 60 * 1000
+  return String(error && error.message || error || 'redis unavailable').slice(0, 160)
+}
 
 function getRedis() {
+  if (redisDisabledUntil > Date.now()) {
+    return null
+  }
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN
   if (!redisUrl || !redisToken) {
@@ -102,32 +112,57 @@ function totalKey(festivalId, event) {
   return `festival:${festivalId}:events:total:${event}`
 }
 
-function incrementMemory(festivalId, day, event) {
+function incrementMemory(festivalId, day, event, count) {
+  const amount = Math.max(1, Math.min(Number(count) || 1, 1000))
   const daily = dailyKey(festivalId, day, event)
   const total = totalKey(festivalId, event)
-  memory.set(daily, (memory.get(daily) || 0) + 1)
-  memory.set(total, (memory.get(total) || 0) + 1)
+  memory.set(daily, (memory.get(daily) || 0) + amount)
+  memory.set(total, (memory.get(total) || 0) + amount)
 }
 
-async function trackEvent(payload) {
+function normalizeEventItems(payload) {
+  const source = Array.isArray(payload && payload.events)
+    ? payload.events
+    : [{ event: payload && payload.event, count: payload && payload.count }]
+  return source
+    .map(item => ({
+      event: normalizeEventName(item && item.event),
+      count: Math.max(1, Math.min(Math.round(Number(item && item.count) || 1), 1000))
+    }))
+    .filter(item => item.event)
+}
+
+async function trackEvents(payload) {
   const festivalId = normalizeFestivalId(payload && payload.festivalId)
-  const event = normalizeEventName(payload && payload.event)
-  if (!event) {
+  const events = normalizeEventItems(payload)
+  if (!events.length) {
     throw new Error('unknown event')
   }
   const day = shanghaiDay(new Date())
   const redis = getRedis()
   if (!redis) {
-    incrementMemory(festivalId, day, event)
-    return { event, day, stored: 'memory' }
+    events.forEach(item => incrementMemory(festivalId, day, item.event, item.count))
+    return { events, day, stored: 'memory' }
   }
 
   const pipeline = redis.pipeline()
-  pipeline.incr(dailyKey(festivalId, day, event))
-  pipeline.expire(dailyKey(festivalId, day, event), RETENTION_DAYS * 86400)
-  pipeline.incr(totalKey(festivalId, event))
-  await pipeline.exec()
-  return { event, day, stored: 'redis' }
+  events.forEach(item => {
+    pipeline.incrby(dailyKey(festivalId, day, item.event), item.count)
+    pipeline.expire(dailyKey(festivalId, day, item.event), RETENTION_DAYS * 86400)
+    pipeline.incrby(totalKey(festivalId, item.event), item.count)
+  })
+  try {
+    await pipeline.exec()
+    return { events, day, stored: 'redis' }
+  } catch (error) {
+    const fallbackError = disableRedisTemporarily(error)
+    events.forEach(item => incrementMemory(festivalId, day, item.event, item.count))
+    return { events, day, stored: 'memory', fallbackError }
+  }
+}
+
+async function trackEvent(payload) {
+  return trackEvents(payload)
 }
 
 async function getEventSummary(payload) {
@@ -137,20 +172,7 @@ async function getEventSummary(payload) {
   const redis = getRedis()
 
   if (!redis) {
-    return {
-      stored: 'memory',
-      days: days.map(day => ({
-        day: dayLabel(day),
-        events: events.reduce((counts, event) => {
-          counts[event] = Number(memory.get(dailyKey(festivalId, day, event))) || 0
-          return counts
-        }, {})
-      })),
-      totals: events.reduce((counts, event) => {
-        counts[event] = Number(memory.get(totalKey(festivalId, event))) || 0
-        return counts
-      }, {})
-    }
+    return memorySummary(festivalId, days, events)
   }
 
   const pipeline = redis.pipeline()
@@ -158,7 +180,15 @@ async function getEventSummary(payload) {
     events.forEach(event => pipeline.get(dailyKey(festivalId, day, event)))
   })
   events.forEach(event => pipeline.get(totalKey(festivalId, event)))
-  const values = await pipeline.exec()
+  let values
+  try {
+    values = await pipeline.exec()
+  } catch (error) {
+    return {
+      ...memorySummary(festivalId, days, events),
+      fallbackError: disableRedisTemporarily(error)
+    }
+  }
   let index = 0
   const daily = days.map(day => {
     const counts = {}
@@ -176,9 +206,27 @@ async function getEventSummary(payload) {
   return { stored: 'redis', days: daily, totals }
 }
 
+function memorySummary(festivalId, days, events) {
+  return {
+    stored: 'memory',
+    days: days.map(day => ({
+      day: dayLabel(day),
+      events: events.reduce((counts, event) => {
+        counts[event] = Number(memory.get(dailyKey(festivalId, day, event))) || 0
+        return counts
+      }, {})
+    })),
+    totals: events.reduce((counts, event) => {
+      counts[event] = Number(memory.get(totalKey(festivalId, event))) || 0
+      return counts
+    }, {})
+  }
+}
+
 module.exports = {
   EVENT_NAMES,
   getEventSummary,
   isSummaryAuthorized,
-  trackEvent
+  trackEvent,
+  trackEvents
 }
