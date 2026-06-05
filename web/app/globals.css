@@ -3417,9 +3417,9 @@ a {
   gap: 3px;
   height: 56px;
   padding: 0 4px;
-  border: 1px solid #e3e6ea;
-  border-radius: 9px;
-  background: #ffffff;
+  border: 1px solid #f0f0ec;
+  border-radius: 8px;
+  background: #f7f7f5;
 }
 
 .ticket-type-nm {
@@ -3435,16 +3435,18 @@ a {
 }
 
 .ticket-type.is-on {
-  border-color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  border-color: #171917;
+  background: #ffffff;
 }
 
-.ticket-type.is-seek.is-on { border-color: #4f9c78; box-shadow: 0 0 0 1px rgba(79, 156, 120, 0.18); }
-.ticket-type.is-offer.is-on { border-color: #c4894f; box-shadow: 0 0 0 1px rgba(196, 137, 79, 0.18); }
-.ticket-type.is-swap.is-on { border-color: #5f88ad; box-shadow: 0 0 0 1px rgba(95, 136, 173, 0.18); }
+.ticket-type.is-on .ticket-type-nm {
+  color: #171917;
+}
 
-.poster-field-title.ticket-give { color: #c4894f; }
-.poster-field-title.ticket-want { color: #4f9c78; }
+.poster-field-title.ticket-give,
+.poster-field-title.ticket-want {
+  color: #737872;
+}
 
 .ticket-search,
 .ticket-input {
@@ -3452,9 +3454,9 @@ a {
   height: 34px;
   margin-top: 7px;
   padding: 0 11px;
-  border: 1px solid #e3e6ea;
+  border: 1px solid #f0f0ec;
   border-radius: 8px;
-  background: #ffffff;
+  background: #f7f7f5;
   color: #303530;
   font-size: 12.5px;
 }
@@ -3465,61 +3467,11 @@ a {
   color: #b3b8b2;
 }
 
-.ticket-pick {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
 .ticket-empty {
   padding: 16px 0;
   color: #9aa09a;
   font-size: 12px;
   text-align: center;
-}
-
-.ticket-pickrow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 9px 10px;
-  border: 1px solid #e3e6ea;
-  border-radius: 8px;
-  background: #ffffff;
-  text-align: left;
-}
-
-.ticket-pickrow.is-sel {
-  border-color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
-}
-
-.ticket-chk {
-  position: relative;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid #cfd3cd;
-  border-radius: 50%;
-}
-
-.ticket-chk.is-on {
-  border-color: #1d8fff;
-  background: #1d8fff;
-}
-
-.ticket-chk.is-on::after {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 5px;
-  height: 9px;
-  border: solid #ffffff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
 }
 
 .ticket-pk-body {
@@ -3549,12 +3501,7 @@ a {
 
 .ticket-opt {
   display: flex;
-  gap: 7px;
-  margin-top: 6px;
-  padding: 9px 10px;
-  border: 1px dashed #d8dcd7;
-  border-radius: 8px;
-  background: #f7f8f9;
+  gap: 8px;
 }
 
 .ticket-field {
@@ -3574,7 +3521,7 @@ a {
   width: 100%;
   height: 30px;
   padding: 0 9px;
-  border: 1px solid #e3e6ea;
+  border: 1px solid #e6e6e2;
   border-radius: 6px;
   background: #ffffff;
   color: #333333;
@@ -3590,18 +3537,18 @@ a {
 .ticket-c {
   flex: 1;
   height: 36px;
-  border: 1px solid #e3e6ea;
+  border: 1px solid #f0f0ec;
   border-radius: 8px;
-  background: #ffffff;
+  background: #f7f7f5;
   color: #737872;
   font-size: 12.5px;
   font-weight: 600;
 }
 
 .ticket-c.is-on {
-  border-color: #1d8fff;
-  color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  border-color: #171917;
+  background: #ffffff;
+  color: #171917;
 }
 
 .ticket-upload {
@@ -3639,44 +3586,32 @@ a {
 }
 
 .ticket-selrow {
-  border: 1px solid #e3e6ea;
+  padding: 11px 11px 12px;
+  border: 1px solid #f0f0ec;
   border-radius: 8px;
-  background: #ffffff;
-  overflow: hidden;
+  background: #f7f7f5;
 }
 
 .ticket-selhead {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 8px 9px 12px;
-}
-
-.ticket-remove {
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #f0f1f2;
-  color: #8a8f89;
-  font-size: 17px;
-  line-height: 1;
+  margin-bottom: 10px;
 }
 
 .ticket-selrow .ticket-opt {
-  margin: 0 8px 9px;
+  margin: 0;
 }
 
 .ticket-search-wrap {
   position: relative;
-  margin-top: 8px;
 }
 
 .ticket-dropdown {
   display: flex;
   flex-direction: column;
   margin-top: 6px;
-  border: 1px solid #e3e6ea;
+  border: 1px solid #f0f0ec;
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
@@ -3687,8 +3622,8 @@ a {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
-  border-bottom: 1px solid #f0f1f2;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f2f2ee;
   background: #ffffff;
   text-align: left;
 }
@@ -3697,14 +3632,24 @@ a {
   border-bottom: none;
 }
 
-.ticket-add {
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
+/* 加入 / 移除：统一成中性小圆按钮，和外面的 .remove 一套语言 */
+.ticket-add,
+.ticket-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d4d7d1;
   border-radius: 50%;
-  background: #1d8fff;
-  color: #ffffff;
-  font-size: 19px;
-  line-height: 26px;
-  text-align: center;
+  background: #ffffff;
+  color: #59615b;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.ticket-add {
+  font-size: 17px;
 }

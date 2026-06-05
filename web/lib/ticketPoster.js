@@ -17,8 +17,10 @@
 //   }
 
 const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif'
-const WIDTH = 750
-const PAD = 46
+// 列表为左对齐紧凑内容，画布不必占满 750；收窄让右侧不留大片空白。
+// 单场满幅海报版仍用较宽画布以保留海报气质。
+const WIDTH = 620
+const PAD = 40
 
 const TYPE_META = {
   seek: { label: '求 票', accent: '#5ab38a', priceTint: '#9fd6bd' },
@@ -174,15 +176,16 @@ function rowHeight(item) {
 // 画类型徽标（右上角）
 function drawBadge(ctx, type, rightX, y) {
   const meta = TYPE_META[type]
-  setText(ctx, 26, '#fff', '700')
+  const fontSize = 32
+  setText(ctx, fontSize, '#fff', '700')
   const tw = ctx.measureText(meta.label).width
-  const padX = 24
+  const padX = 30
   const w = tw + padX * 2
-  const h = 50
+  const h = 62
   const x = rightX - w
   fillRoundRect(ctx, x, y, w, h, h / 2, meta.accent)
-  setText(ctx, 26, '#fff', '700')
-  ctx.fillText(meta.label, x + padX, y + 34)
+  setText(ctx, fontSize, '#fff', '700')
+  ctx.fillText(meta.label, x + padX, y + 43)
   return h
 }
 
