@@ -3417,9 +3417,9 @@ a {
   gap: 3px;
   height: 56px;
   padding: 0 4px;
-  border: 1px solid #f0f0ec;
-  border-radius: 8px;
-  background: #f7f7f5;
+  border: 1px solid #e3e6ea;
+  border-radius: 9px;
+  background: #ffffff;
 }
 
 .ticket-type-nm {
@@ -3435,12 +3435,8 @@ a {
 }
 
 .ticket-type.is-on {
-  border-color: #171917;
-  background: #ffffff;
-}
-
-.ticket-type.is-on .ticket-type-nm {
-  color: #171917;
+  border-color: #1d8fff;
+  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
 }
 
 .poster-field-title.ticket-give,
@@ -3454,9 +3450,9 @@ a {
   height: 34px;
   margin-top: 7px;
   padding: 0 11px;
-  border: 1px solid #f0f0ec;
+  border: 1px solid #e3e6ea;
   border-radius: 8px;
-  background: #f7f7f5;
+  background: #ffffff;
   color: #303530;
   font-size: 12.5px;
 }
@@ -3537,18 +3533,18 @@ a {
 .ticket-c {
   flex: 1;
   height: 36px;
-  border: 1px solid #f0f0ec;
+  border: 1px solid #e3e6ea;
   border-radius: 8px;
-  background: #f7f7f5;
+  background: #ffffff;
   color: #737872;
   font-size: 12.5px;
   font-weight: 600;
 }
 
 .ticket-c.is-on {
-  border-color: #171917;
-  background: #ffffff;
-  color: #171917;
+  border-color: #1d8fff;
+  color: #1d8fff;
+  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
 }
 
 .ticket-upload {
@@ -3587,9 +3583,10 @@ a {
 
 .ticket-selrow {
   padding: 11px 11px 12px;
-  border: 1px solid #f0f0ec;
+  border: 1px solid #1d8fff;
   border-radius: 8px;
-  background: #f7f7f5;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
 }
 
 .ticket-selhead {
@@ -3632,24 +3629,32 @@ a {
   border-bottom: none;
 }
 
-/* 加入 / 移除：统一成中性小圆按钮，和外面的 .remove 一套语言 */
+/* 加入 / 移除：小圆按钮，加号用蓝色填充呼应选中色 */
 .ticket-add,
 .ticket-remove {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  border: 1px solid #d4d7d1;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: #ffffff;
-  color: #59615b;
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 1;
 }
 
 .ticket-add {
-  font-size: 17px;
+  background: #1d8fff;
+  color: #ffffff;
+}
+
+.ticket-remove {
+  border: 1px solid #d4d7d1;
+  background: #ffffff;
+  color: #6b716a;
+}
+
+.ticket-add svg,
+.ticket-remove svg {
+  display: block;
+  width: 14px;
+  height: 14px;
 }

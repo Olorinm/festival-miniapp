@@ -2564,7 +2564,9 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
                   <span className="ticket-pk-film">{item.cnTitle}</span>
                   <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
                 </div>
-                <button className="ticket-remove" type="button" aria-label="移除" onClick={() => removePick(setStore, id)}>×</button>
+                <button className="ticket-remove" type="button" aria-label="移除" onClick={() => removePick(setStore, id)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M7 7l10 10M17 7L7 17" /></svg>
+                </button>
               </div>
               <div className="ticket-opt">
                 <div className="ticket-field">
@@ -2600,7 +2602,9 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
                   <span className="ticket-pk-film">{item.cnTitle}</span>
                   <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
                 </span>
-                <span className="ticket-add" aria-hidden="true">+</span>
+                <span className="ticket-add" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 6v12M6 12h12" /></svg>
+                </span>
               </button>
             ))}
           </div>
