@@ -33,7 +33,11 @@ project.private.config.json
 project.local.config.json
 
 # Local-only tooling
+.claude/
 scripts/
+
+# Local pipeline outputs / intermediate artifacts / reports
+outputs/
 
 # Local data caches and raw downloaded assets
 cloud-data/douban/
