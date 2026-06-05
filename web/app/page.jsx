@@ -2466,18 +2466,25 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
   const plannedSet = new Set(selectedIds || [])
   const planned = (allScreenings || []).filter(item => plannedSet.has(item.id))
 
-  // 根据搜索词过滤候选场次：空词时只显示已排片，有词时搜全部
-  const candidatesFor = q => {
+  // 搜索下拉候选：空词显示已排片（快捷添加），有词搜全部；都排除已加入的
+  const candidatesFor = (q, store) => {
     const text = String(q || '').trim().toLowerCase()
-    if (!text) return planned
-    return (allScreenings || []).filter(item => (item.searchText || '').includes(text)).slice(0, 30)
+    const base = text
+      ? (allScreenings || []).filter(item => (item.searchText || '').includes(text))
+      : planned
+    return base.filter(item => !store[item.id]).slice(0, 20)
   }
 
-  const togglePick = (store, setStore, id) => {
+  const screeningById = id => (allScreenings || []).find(s => s.id === id) || null
+
+  const addPick = (setStore, id) => {
+    setStore(prev => (prev[id] ? prev : { ...prev, [id]: { price: '', seat: '' } }))
+  }
+  const removePick = (setStore, id) => {
     setStore(prev => {
+      if (!prev[id]) return prev
       const next = { ...prev }
-      if (next[id]) delete next[id]
-      else next[id] = { price: '', seat: '' }
+      delete next[id]
       return next
     })
   }
@@ -2541,38 +2548,66 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
     reader.readAsDataURL(file)
   }
 
-  const renderPickList = (candidates, store, setStore) => (
-    <div className="ticket-pick">
-      {candidates.length === 0 ? (
-        <div className="ticket-empty">没有匹配的场次</div>
-      ) : candidates.map(item => {
-        const sel = !!store[item.id]
-        return (
-          <div key={item.id}>
-            <button className={`ticket-pickrow ${sel ? 'is-sel' : ''}`} type="button" onClick={() => togglePick(store, setStore, item.id)}>
-              <span className={`ticket-chk ${sel ? 'is-on' : ''}`} />
-              <span className="ticket-pk-body">
-                <span className="ticket-pk-film">{item.cnTitle}</span>
-                <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
-              </span>
-            </button>
-            {sel ? (
+  // 已选场次列表（上方）：每条带价/位输入 + 移除
+  const renderSelected = (store, setStore) => {
+    const ids = Object.keys(store)
+    if (!ids.length) return null
+    return (
+      <div className="ticket-selected">
+        {ids.map(id => {
+          const item = screeningById(id)
+          if (!item) return null
+          return (
+            <div className="ticket-selrow" key={id}>
+              <div className="ticket-selhead">
+                <div className="ticket-pk-body">
+                  <span className="ticket-pk-film">{item.cnTitle}</span>
+                  <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
+                </div>
+                <button className="ticket-remove" type="button" aria-label="移除" onClick={() => removePick(setStore, id)}>×</button>
+              </div>
               <div className="ticket-opt">
                 <div className="ticket-field">
                   <span className="ticket-fl">票价（可选，请勿高于原价）</span>
-                  <input className="ticket-fi" value={store[item.id].price} placeholder="如 ¥80" onChange={e => updateField(setStore, item.id, 'price', e.target.value)} />
+                  <input className="ticket-fi" value={store[id].price} placeholder="如 ¥80" onChange={e => updateField(setStore, id, 'price', e.target.value)} />
                 </div>
                 <div className="ticket-field">
                   <span className="ticket-fl">座位号（可选）</span>
-                  <input className="ticket-fi" value={store[item.id].seat} placeholder="如 5 排 7-8" onChange={e => updateField(setStore, item.id, 'seat', e.target.value)} />
+                  <input className="ticket-fi" value={store[id].seat} placeholder="如 5 排 7-8" onChange={e => updateField(setStore, id, 'seat', e.target.value)} />
                 </div>
               </div>
-            ) : null}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // 搜索框 + 候选下拉（右侧加号添加）
+  const renderSearch = (query, setQuery, store, setStore, placeholder) => {
+    const candidates = candidatesFor(query, store)
+    const showDrop = query.trim() || candidates.length > 0
+    return (
+      <div className="ticket-search-wrap">
+        <input className="ticket-search" value={query} placeholder={placeholder} onChange={e => setQuery(e.target.value)} />
+        {showDrop ? (
+          <div className="ticket-dropdown">
+            {candidates.length === 0 ? (
+              <div className="ticket-empty">没有匹配的场次</div>
+            ) : candidates.map(item => (
+              <button className="ticket-candidate" type="button" key={item.id} onClick={() => { addPick(setStore, item.id); setQuery('') }}>
+                <span className="ticket-pk-body">
+                  <span className="ticket-pk-film">{item.cnTitle}</span>
+                  <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
+                </span>
+                <span className="ticket-add" aria-hidden="true">+</span>
+              </button>
+            ))}
           </div>
-        )
-      })}
-    </div>
-  )
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div className="poster-mask" onClick={onClose}>
@@ -2597,18 +2632,18 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
           {type === 'swap' ? (
             <>
               <div className="poster-field-title ticket-give">我出（手里的票）</div>
-              <input className="ticket-search" value={giveQuery} placeholder="已排片里选，或搜全部场次…" onChange={e => setGiveQuery(e.target.value)} />
-              {renderPickList(candidatesFor(giveQuery), givePicked, setGivePicked)}
+              {renderSelected(givePicked, setGivePicked)}
+              {renderSearch(giveQuery, setGiveQuery, givePicked, setGivePicked, '已排片里选，或搜全部场次…')}
 
               <div className="poster-field-title ticket-want">我求（想要的票）</div>
-              <input className="ticket-search" value={wantQuery} placeholder="搜索想换的场次…" onChange={e => setWantQuery(e.target.value)} />
-              {renderPickList(candidatesFor(wantQuery), wantPicked, setWantPicked)}
+              {renderSelected(wantPicked, setWantPicked)}
+              {renderSearch(wantQuery, setWantQuery, wantPicked, setWantPicked, '搜索想换的场次…')}
             </>
           ) : (
             <>
-              <div className="poster-field-title">场次（可多选 · 搜索新增）</div>
-              <input className="ticket-search" value={query} placeholder="已排片里选，或搜全部场次…" onChange={e => setQuery(e.target.value)} />
-              {renderPickList(candidatesFor(query), picked, setPicked)}
+              <div className="poster-field-title">场次（可多选 · 搜索添加）</div>
+              {renderSelected(picked, setPicked)}
+              {renderSearch(query, setQuery, picked, setPicked, '已排片里选，或搜全部场次…')}
             </>
           )}
 

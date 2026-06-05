@@ -326,16 +326,6 @@ function planLayout(spec) {
   return { blocks, height: y, single: false, contentX, contentW }
 }
 
-function planTitle(spec) {
-  if (spec.type === 'swap') {
-    const g = (spec.give || []).length
-    const w = (spec.want || []).length
-    return `想换票 · ${g} 换 ${w}`
-  }
-  const n = (spec.screenings || []).length
-  return spec.type === 'seek' ? `求票 · ${n} 场` : `转票 · ${n} 场`
-}
-
 // ===== 主绘制 =====
 function paint(ctx, spec, layout, images) {
   // 背景
@@ -379,9 +369,8 @@ function paint(ctx, spec, layout, images) {
       return
     }
     if (block.kind === 'head') {
+      // 顶部只留类型徽标；场次数靠下方列表一目了然，不再重复写标题
       drawBadge(ctx, spec.type, block.x + block.w, block.y)
-      setText(ctx, 36, '#fff', '720')
-      ctx.fillText(planTitle(spec), block.x, block.y + 36)
       return
     }
     if (block.kind === 'groupLabel') {

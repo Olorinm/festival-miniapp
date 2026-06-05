@@ -3629,3 +3629,82 @@ a {
   max-height: 100%;
   object-fit: contain;
 }
+
+/* 票务图：搜索下拉 + 已选列表 */
+.ticket-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ticket-selrow {
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.ticket-selhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px 9px 12px;
+}
+
+.ticket-remove {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #f0f1f2;
+  color: #8a8f89;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.ticket-selrow .ticket-opt {
+  margin: 0 8px 9px;
+}
+
+.ticket-search-wrap {
+  position: relative;
+  margin-top: 8px;
+}
+
+.ticket-dropdown {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.ticket-candidate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-bottom: 1px solid #f0f1f2;
+  background: #ffffff;
+  text-align: left;
+}
+
+.ticket-candidate:last-child {
+  border-bottom: none;
+}
+
+.ticket-add {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #1d8fff;
+  color: #ffffff;
+  font-size: 19px;
+  line-height: 26px;
+  text-align: center;
+}
