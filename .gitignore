@@ -32,6 +32,9 @@ node_modules/
 project.private.config.json
 project.local.config.json
 
+# Local-only tooling
+scripts/
+
 # Local data caches and raw downloaded assets
 cloud-data/douban/
 cloud-data/douban*/

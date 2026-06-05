@@ -22,6 +22,15 @@ function getInterestMeta(key) {
   return interestOptions.find(item => item.key === key) || noInterest
 }
 
+function resolveScreeningInterest(film, filmById, filmMarks) {
+  const ids = [film.id].concat(Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [])
+  return ids.reduce((best, id) => {
+    const sourceFilm = id === film.id ? film : filmById.get(id)
+    const interest = getInterestMeta(filmMarks[id] || (sourceFilm && sourceFilm.defaultInterest))
+    return interest.rank > best.rank ? interest : best
+  }, noInterest)
+}
+
 function toMinutes(time) {
   const parts = String(time).split(':')
   const hour = Number(parts[0] || 0)
@@ -42,9 +51,13 @@ function byScreeningTime(a, b) {
 
 function buildScreenings(films, marks) {
   const filmMarks = marks || {}
+  const filmById = new Map(films.map(film => [film.id, film]))
   return films
     .reduce((list, film) => {
-      const interest = getInterestMeta(filmMarks[film.id] || film.defaultInterest)
+      const memberFilms = Array.isArray(film.memberFilmIds)
+        ? film.memberFilmIds.map(id => filmById.get(id)).filter(Boolean)
+        : []
+      const interest = resolveScreeningInterest(film, filmById, filmMarks)
       const interestKey = interest.key
       const rows = film.screenings.map(screening => {
         const ticket = sanitizeTicketText(screening.ticket)
@@ -64,6 +77,9 @@ function buildScreenings(films, marks) {
           ratingSummary: filmRatingSummary(film),
           doubanRating: film.doubanRating,
           imdbRating: film.imdbRating,
+          memberFilmIds: Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [],
+          memberCnTitles: Array.isArray(film.memberCnTitles) ? film.memberCnTitles : [],
+          programType: film.programType || '',
           interestKey,
           interest,
           timeRange: `${screening.start}-${screening.end}`,
@@ -78,6 +94,14 @@ function buildScreenings(films, marks) {
             filmSection(film),
             filmCountry(film),
             filmGenre(film),
+            film.memberCnTitles,
+            memberFilms.map(member => [
+              filmDisplayTitle(member),
+              filmEnTitle(member),
+              filmDirector(member),
+              filmSection(member),
+              filmGenre(member)
+            ].join(' ')),
             screening.cinema,
             screening.hall
           ].join(' ').toLowerCase(),
@@ -265,6 +289,19 @@ function findScreening(screenings, screeningId) {
   return screenings.find(screening => screening.id === screeningId)
 }
 
+function isRelatedScreeningForFilm(screening, film) {
+  if (!screening || !film) {
+    return false
+  }
+  return screening.filmId === film.id ||
+    (film.mappedProgramFilmId && screening.filmId === film.mappedProgramFilmId) ||
+    (Array.isArray(screening.memberFilmIds) && screening.memberFilmIds.includes(film.id))
+}
+
+function findFilmScreenings(film, allScreenings) {
+  return (allScreenings || []).filter(screening => isRelatedScreeningForFilm(screening, film))
+}
+
 function hasOverlap(a, b) {
   if (!a || !b || a.id === b.id || a.date !== b.date) {
     return false
@@ -380,6 +417,7 @@ module.exports = {
   filmSection,
   filmYear,
   findConflicts,
+  findFilmScreenings,
   findFilm,
   findScreening,
   firstText,

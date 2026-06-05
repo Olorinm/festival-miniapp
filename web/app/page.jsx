@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2, RefreshCw } from 'lucide-react'
+import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2, PencilLine, RefreshCw } from 'lucide-react'
 import festival from '../lib/festival'
 import schedule from '../lib/schedule.cjs'
+import { createTicketPosterImage } from '../lib/ticketPoster'
 
 const STORAGE_PREFIX = 'festival.web.siff2026.'
 const MARK_OPTIONS = [
@@ -30,6 +31,7 @@ const DEFAULT_SCHEDULE_FIELD_CONFIG = {
   synopsis: false
 }
 const DEFAULT_SORT = 'section'
+const PLAN_NOTE_MAX_LENGTH = 40
 const SORT_OPTIONS = [
   { key: 'section', label: '单元', shortLabel: '单元' },
   { key: 'director', label: '导演', shortLabel: '导演' },
@@ -46,7 +48,9 @@ const APP_SHARE_NAME = '赶场愉快'
 const GITHUB_URL = 'https://github.com/Olorinm/festival-miniapp'
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const POPULARITY_RANK_REFRESH_MS = 5 * 60 * 1000
-const POPULARITY_RANK_LIMIT = 20
+const POPULARITY_RANK_INITIAL_LIMIT = 20
+const POPULARITY_RANK_STEP = 10
+const POPULARITY_RANK_MAX_LIMIT = 50
 const POSTER_THEMES = [
   {
     key: 'list',
@@ -112,6 +116,20 @@ const POSTER_THEMES = [
     layout: 'gallery',
     bg: '#f2f3f1',
     panel: '#ffffff',
+    ink: '#151816',
+    muted: '#666d69',
+    subtle: '#9ca29e',
+    faint: '#daddd8',
+    ghost: '#e1e4df',
+    accent: '#415363',
+    conflict: '#9c5555'
+  },
+  {
+    key: 'poster-wall',
+    label: '海报墙',
+    swatch: '#f2f3f1',
+    layout: 'wall',
+    bg: '#f2f3f1',
     ink: '#151816',
     muted: '#666d69',
     subtle: '#9ca29e',
@@ -342,6 +360,7 @@ function createScheme(name, selectedIds = []) {
     id: `plan_${now}_${Math.floor(Math.random() * 1000)}`,
     name,
     selectedIds: uniqueIds(selectedIds),
+    notes: {},
     smartPlanMeta: null,
     createdAt: now,
     updatedAt: now
@@ -353,6 +372,7 @@ function initialSchemes() {
     id: DEFAULT_SCHEME_ID,
     name: '方案 1',
     selectedIds: [],
+    notes: {},
     smartPlanMeta: null,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -487,7 +507,7 @@ function formatRankUpdatedAt(value) {
   return `截至 ${hour}:${minute}`
 }
 
-function buildPopularityRows(screenings, counts, limit = POPULARITY_RANK_LIMIT) {
+function buildPopularityRows(screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
   const countMap = counts && typeof counts === 'object' ? counts : {}
   return (Array.isArray(screenings) ? screenings : [])
     .map(item => ({
@@ -506,6 +526,7 @@ function hasPositivePopularityCounts(counts) {
 
 function formatPlanText(plan, options) {
   const source = options || {}
+  const notes = source.notes && typeof source.notes === 'object' ? source.notes : {}
   const lines = [
     `赶场愉快｜${source.festivalName || '电影节'}排片`,
     source.schemeName ? `${source.schemeName} · ${plan.selected.length} 场 · ${formatMinutes(plan.totalMinutes)}` : `${plan.selected.length} 场 · ${formatMinutes(plan.totalMinutes)}`,
@@ -514,8 +535,10 @@ function formatPlanText(plan, options) {
   plan.days.forEach(day => {
     lines.push(day.dayLabel)
     day.items.forEach(item => {
+      const note = notes[item.id]
       lines.push(`${item.timeRange}｜${item.cnTitle}${item.conflict ? ' [冲突]' : ''}`)
       lines.push(formatVenueLine(item))
+      if (note) lines.push(`备注：${note}`)
       lines.push('')
     })
   })
@@ -543,6 +566,23 @@ function parseImportScreeningIds(text, validScreeningIds) {
   const match = String(text || '').match(/导入码[:：]\s*([^\n\r]+)/)
   if (!match) return []
   return uniqueIds(match[1].split(/[,，、\s]+/).map(item => item.trim())).filter(id => validScreeningIds[id])
+}
+
+function sanitizePlanNotes(notes, validScreeningIds, selectedIds) {
+  if (!notes || typeof notes !== 'object') return {}
+  const selectedMap = Array.isArray(selectedIds)
+    ? selectedIds.reduce((map, id) => {
+        map[id] = true
+        return map
+      }, {})
+    : null
+  return Object.entries(notes).reduce((next, [id, value]) => {
+    if (validScreeningIds && !validScreeningIds[id]) return next
+    if (selectedMap && !selectedMap[id]) return next
+    const text = String(value || '').trim().slice(0, PLAN_NOTE_MAX_LENGTH)
+    if (text) next[id] = text
+    return next
+  }, {})
 }
 
 function getPosterTheme(key) {
@@ -618,9 +658,68 @@ function posterPopularityText(item, options) {
   return `${Math.round(count)}人已排`
 }
 
+function posterNoteText(item, options) {
+  if (!options || options.includeNotes === false) return ''
+  const note = String(options.notes && options.notes[item.id] || '').trim()
+  return note
+}
+
+function buildPosterWall(plan, options, theme) {
+  const width = POSTER_WIDTH
+  const columns = 3
+  const posterWidth = Math.floor(width / columns)
+  const posterHeight = Math.round(posterWidth * 1.46)
+  const seenFilms = new Set()
+  const items = (plan.days || []).flatMap(day => day.items || []).filter(item => {
+    const key = item.filmId || item.cnTitle || item.id
+    if (seenFilms.has(key)) return false
+    seenFilms.add(key)
+    return true
+  })
+  const blocks = []
+  let y = 0
+
+  for (let index = 0; index < items.length; index += columns) {
+    const rowItems = items.slice(index, index + columns)
+    rowItems.forEach((item, column) => {
+      blocks.push({
+        type: 'wallPoster',
+        posterX: column * posterWidth,
+        posterY: y,
+        posterWidth,
+        posterHeight,
+        posterRadius: 0,
+        posterCropInset: 0.04,
+        posterSeamless: true,
+        posterStroke: false,
+        posterSrc: String((options && options.posterSrcByFilmId && options.posterSrcByFilmId[item.filmId]) || item.posterSrc || '').replace(/^\/assets\/posters\//, '/posters/')
+      })
+    })
+
+    y += posterHeight
+  }
+
+  return {
+    width,
+    height: Math.max(420, y),
+    blocks,
+    theme,
+    pixelRatio: 1,
+    includePosters: true,
+    includeCode: false,
+    summary: {
+      title: `${posterFestivalName(options && options.festivalName)} 海报墙`,
+      count: `${items.length} 部`,
+      screenings: items.length,
+      duration: ''
+    }
+  }
+}
+
 function buildPoster(plan, options) {
   const theme = getPosterTheme(options && options.theme)
   const layout = theme.layout || 'minimal'
+  if (layout === 'wall') return buildPosterWall(plan, options, theme)
   const includePosters = Boolean(options && options.includePosters)
   const width = POSTER_WIDTH
   const margin = layout === 'gallery' ? 58 : layout === 'list' ? 62 : 74
@@ -673,11 +772,14 @@ function buildPoster(plan, options) {
       const venueLineHeight = layout === 'list' ? 26 : 28
       const titleLines = wrapPosterText(item.cnTitle, mainWidth, titleSize)
       const popularityText = posterPopularityText(item, options)
-      const venueLines = wrapPosterText(compact([posterVenue(item), popularityText]), mainWidth, venueSize)
+      const noteText = posterNoteText(item, options)
+      const venueLines = wrapPosterText(posterVenue(item), mainWidth, venueSize)
+      const accentLines = wrapPosterText(compact([popularityText, noteText]), mainWidth, venueSize, 2).filter(Boolean)
+      const metaLineCount = venueLines.length + accentLines.length
       const itemHeight = Math.max(
         layout === 'gallery' ? 116 : layout === 'list' ? 98 : 106,
         posterSlot ? posterSlot.height + 12 : 0,
-        26 + titleLines.length * titleLineHeight + venueLines.length * venueLineHeight
+        26 + titleLines.length * titleLineHeight + metaLineCount * venueLineHeight
       )
       const posterY = posterSlot
         ? layout === 'gallery'
@@ -705,7 +807,7 @@ function buildPoster(plan, options) {
         end: item.end,
         titleLines,
         venueLines,
-        popularityText,
+        accentLines,
         conflict: item.conflict
       })
       y += itemHeight + (layout === 'gallery' ? 18 : layout === 'list' ? 18 : 28)
@@ -778,26 +880,29 @@ function drawPosterTextLines(ctx, lines, x, y, lineHeight) {
 }
 
 function posterPopularityColor(colors) {
-  return (colors.layout || '') === 'noir' ? '#8fa6bc' : '#536b84'
+  // 备注/热度是次要信息：用主题正文色降透明度，永远与主题同色系。
+  // 夜场（深底白字）单独抬高不透明度，避免在深色上发糊。
+  const alpha = (colors.layout || '') === 'noir' ? 0.55 : 0.45
+  const ink = String(colors.ink || '#171917').replace('#', '')
+  const r = parseInt(ink.slice(0, 2), 16)
+  const g = parseInt(ink.slice(2, 4), 16)
+  const b = parseInt(ink.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-function drawPosterVenueLines(ctx, block, x, y, lineHeight, colors, size, weight) {
-  const lines = Array.isArray(block.venueLines) ? block.venueLines : []
-  const heat = block.popularityText || ''
-  lines.forEach((line, index) => {
-    const baseline = y + index * lineHeight
-    setPosterText(ctx, size, colors.muted, weight)
-    if (!heat || !line.endsWith(heat)) {
-      ctx.fillText(line, x, baseline)
-      return
-    }
+function drawPosterMetaLines(ctx, block, x, y, lineHeight, colors, size, weight) {
+  let lineIndex = 0
+  const drawLines = (lines, color) => {
+    if (!Array.isArray(lines) || !lines.length) return
+    setPosterText(ctx, size, color, weight)
+    lines.forEach(line => {
+      ctx.fillText(line, x, y + lineIndex * lineHeight)
+      lineIndex += 1
+    })
+  }
 
-    const prefix = line.slice(0, -heat.length)
-    ctx.fillText(prefix, x, baseline)
-    const prefixWidth = ctx.measureText(prefix).width
-    setPosterText(ctx, size, posterPopularityColor(colors), weight)
-    ctx.fillText(heat, x + prefixWidth, baseline)
-  })
+  drawLines(block.venueLines, colors.muted)
+  drawLines(block.accentLines, posterPopularityColor(colors))
 }
 
 function isCanvasSafePosterSrc(src) {
@@ -826,7 +931,7 @@ function loadPosterImage(src) {
 }
 
 async function hydratePosterImages(poster) {
-  const imageBlocks = poster.blocks.filter(block => block.type === 'item' && block.posterWidth > 0)
+  const imageBlocks = poster.blocks.filter(block => (block.type === 'item' || block.type === 'wallPoster') && block.posterWidth > 0)
   await Promise.all(imageBlocks.map(async block => {
     block.posterImage = await loadPosterImage(block.posterSrc)
   }))
@@ -839,28 +944,42 @@ function drawCanvasPosterImage(ctx, block, colors) {
   const y = block.posterY
   const width = block.posterWidth
   const height = block.posterHeight
-  const radius = block.posterRadius || 7
+  const radius = block.posterRadius ?? 7
   const image = block.posterImage
+  const seamless = block.posterSeamless === true
+  const bleed = 0
+  const drawX = x - bleed
+  const drawY = y - bleed
+  const drawWidth = width + bleed * 2
+  const drawHeight = height + bleed * 2
 
   ctx.save()
-  drawRoundRect(ctx, x, y, width, height, radius)
-  ctx.clip()
+  if (!seamless) {
+    drawRoundRect(ctx, x, y, width, height, radius)
+    ctx.clip()
+  }
 
   if (image && (image.naturalWidth || image.width) && (image.naturalHeight || image.height)) {
     const sourceWidth = image.naturalWidth || image.width
     const sourceHeight = image.naturalHeight || image.height
-    const scale = Math.max(width / sourceWidth, height / sourceHeight)
-    const cropWidth = width / scale
-    const cropHeight = height / scale
-    const sourceX = Math.max(0, (sourceWidth - cropWidth) / 2)
-    const sourceY = Math.max(0, (sourceHeight - cropHeight) / 2)
-    ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height)
+    const scale = Math.max(drawWidth / sourceWidth, drawHeight / sourceHeight)
+    const cropWidth = drawWidth / scale
+    const cropHeight = drawHeight / scale
+    const cropInset = Math.max(0, Math.min(0.12, Number(block.posterCropInset) || 0))
+    const insetX = cropWidth * cropInset
+    const insetY = cropHeight * cropInset
+    const sourceX = Math.max(0, (sourceWidth - cropWidth) / 2 + insetX)
+    const sourceY = Math.max(0, (sourceHeight - cropHeight) / 2 + insetY)
+    const sourceCropWidth = Math.max(1, cropWidth - insetX * 2)
+    const sourceCropHeight = Math.max(1, cropHeight - insetY * 2)
+    ctx.drawImage(image, sourceX, sourceY, sourceCropWidth, sourceCropHeight, drawX, drawY, drawWidth, drawHeight)
   } else {
     ctx.fillStyle = colors.ghost || colors.faint || '#f1f1ef'
-    ctx.fillRect(x, y, width, height)
+    ctx.fillRect(drawX, drawY, drawWidth, drawHeight)
   }
 
   ctx.restore()
+  if (block.posterStroke === false) return
   ctx.strokeStyle = colors.faint || 'rgba(0,0,0,0.08)'
   ctx.lineWidth = 1
   drawRoundRect(ctx, x, y, width, height, radius)
@@ -915,8 +1034,10 @@ function paintPlanPoster(ctx, poster) {
   const colors = poster.theme
   const layout = colors.layout || 'minimal'
 
-  ctx.fillStyle = colors.bg
-  ctx.fillRect(0, 0, poster.width, poster.height)
+  if (layout !== 'wall') {
+    ctx.fillStyle = colors.bg
+    ctx.fillRect(0, 0, poster.width, poster.height)
+  }
 
   poster.blocks.forEach(block => {
     if (block.type === 'header') {
@@ -994,9 +1115,9 @@ function paintPlanPoster(ctx, poster) {
         setPosterText(ctx, 28, colors.ink, '570')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 34)
         const venueY = block.y + 32 + block.titleLines.length * 34 + 7
-        drawPosterVenueLines(ctx, block, block.mainX, venueY, 26, colors, 20, '340')
+        drawPosterMetaLines(ctx, block, block.mainX, venueY, 26, colors, 20, '340')
       } else if (layout === 'silver') {
-        ctx.strokeStyle = block.conflict ? colors.conflict : colors.faint
+        ctx.strokeStyle = colors.faint
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(block.x, block.y - 12)
@@ -1010,9 +1131,10 @@ function paintPlanPoster(ctx, poster) {
         setPosterText(ctx, 29, colors.ink, '540')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        drawPosterVenueLines(ctx, block, block.mainX, venueY, 28, colors, 21, '330')
+        drawPosterMetaLines(ctx, block, block.mainX, venueY, 28, colors, 21, '330')
       } else if (layout === 'noir') {
         fillRoundRect(ctx, block.x - 18, block.y - 18, block.panelWidth || block.mainWidth + 176, block.height + 18, 18, colors.panel)
+        const textX = block.posterWidth ? block.mainX : block.mainX - 18
         ctx.strokeStyle = block.conflict ? colors.conflict : colors.faint
         ctx.lineWidth = 1
         ctx.beginPath()
@@ -1025,9 +1147,9 @@ function paintPlanPoster(ctx, poster) {
         ctx.fillText(block.end, block.timeX + 7, block.y + 64)
         drawCanvasPosterImage(ctx, block, colors)
         setPosterText(ctx, 28, colors.ink, '540')
-        drawPosterTextLines(ctx, block.titleLines, block.mainX - 18, block.y + 30, 36)
+        drawPosterTextLines(ctx, block.titleLines, textX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        drawPosterVenueLines(ctx, block, block.mainX - 18, venueY, 27, colors, 20, '330')
+        drawPosterMetaLines(ctx, block, textX, venueY, 27, colors, 20, '330')
       } else if (layout === 'gallery') {
         fillRoundRect(ctx, block.x + 98, block.y - 18, block.posterWidth ? (block.ruleWidth || block.mainWidth + 122) - 98 : block.mainWidth + 24, block.height + 12, 16, colors.panel)
         setPosterText(ctx, 26, colors.ink, '640')
@@ -1038,7 +1160,7 @@ function paintPlanPoster(ctx, poster) {
         setPosterText(ctx, 28, colors.ink, '560')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        drawPosterVenueLines(ctx, block, block.mainX, venueY, 27, colors, 20, '330')
+        drawPosterMetaLines(ctx, block, block.mainX, venueY, 27, colors, 20, '330')
       } else {
         setPosterText(ctx, 27, colors.ink, '650')
         ctx.fillText(block.start, block.timeX, block.y + 30)
@@ -1048,9 +1170,14 @@ function paintPlanPoster(ctx, poster) {
         setPosterText(ctx, 29, colors.ink, '560')
         drawPosterTextLines(ctx, block.titleLines, block.mainX, block.y + 30, 36)
         const venueY = block.y + 34 + block.titleLines.length * 36 + 8
-        drawPosterVenueLines(ctx, block, block.mainX, venueY, 28, colors, 21, '320')
+        drawPosterMetaLines(ctx, block, block.mainX, venueY, 28, colors, 21, '320')
       }
 
+      return
+    }
+
+    if (block.type === 'wallPoster') {
+      drawCanvasPosterImage(ctx, block, colors)
       return
     }
 
@@ -1071,7 +1198,7 @@ async function createPlanPosterImage(plan, options) {
     await hydratePosterImages(poster)
   }
   const canvas = document.createElement('canvas')
-  const pixelRatio = Math.max(1, Math.min(window.devicePixelRatio || 1, poster.height > 2600 ? 1.5 : 2))
+  const pixelRatio = poster.pixelRatio || Math.max(1, Math.min(window.devicePixelRatio || 1, poster.height > 2600 ? 1.5 : 2))
   canvas.width = poster.width * pixelRatio
   canvas.height = poster.height * pixelRatio
   canvas.style.width = `${poster.width}px`
@@ -1765,21 +1892,29 @@ function SchedulePage({
   )
 }
 
-function PlanCard({ screening, popularity, onRemove, onOpenFilm }) {
+function PlanCard({ screening, note, popularity, onEditNote, onRemove, onOpenFilm }) {
   return (
     <div className={`plan-card ${screening.conflict ? 'has-conflict' : ''}`}>
       {screening.isMock ? <div className="mock-stamp">{screening.mockLabel || '测试场次'}</div> : null}
-      <button className="plan-main" type="button" onClick={() => onOpenFilm(screening.filmId)}>
-        <div className="plan-info">
-          <div className="screen-title">{screening.cnTitle}</div>
-          <div className="venue">{screening.cinema} · {screening.hall}</div>
-          <div className="ticket-row">
-            {screening.ticketPlan ? <span className="ticket">{screening.ticketPlan}</span> : null}
-            {screening.price ? <span className="price">¥{screening.price}</span> : null}
-            {popularity > 0 ? <span className="popularity">{popularity}人已排</span> : null}
+      <div className="plan-content">
+        <button className="plan-main" type="button" onClick={() => onOpenFilm(screening.filmId)}>
+          <div className="plan-info">
+            <div className="screen-title">{screening.cnTitle}</div>
+            <div className="venue">{screening.cinema} · {screening.hall}</div>
+            <div className="ticket-row">
+              {screening.ticketPlan ? <span className="ticket">{screening.ticketPlan}</span> : null}
+              {screening.price ? <span className="price">¥{screening.price}</span> : null}
+              {popularity > 0 ? <span className="popularity">{popularity}人已排</span> : null}
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        <button className={`plan-note-row ${note ? '' : 'is-empty'}`} type="button" onClick={() => onEditNote(screening)}>
+          <span className="plan-note">{note ? `备注：${note}` : '备注'}</span>
+          <span className="plan-note-edit" aria-label={note ? '编辑备注' : '添加备注'} title={note ? '编辑备注' : '添加备注'}>
+            <PencilLine aria-hidden="true" />
+          </span>
+        </button>
+      </div>
       <button className="remove" type="button" onClick={() => onRemove(screening.id)}>
         <span className="remove-symbol"><ActionGlyph type="cross" /></span>
         <span className="remove-label">移除</span>
@@ -1823,10 +1958,12 @@ function PlanPage({
   openImport,
   openExport,
   removeScreening,
+  editPlanNote,
   openFilm,
   popularity
 }) {
   const summary = `${plan.selected.length} 场${plan.totalMinutes ? ` · ${schedule.runtimeText(plan.totalMinutes)}` : ''}`
+  const planNotes = activeScheme?.notes || {}
   const [conflictsExpanded, setConflictsExpanded] = useState(false)
   const longPressTimerRef = useRef(null)
   const longPressedRef = useRef(false)
@@ -1953,7 +2090,14 @@ function PlanPage({
                           {item.conflict ? <span className="conflict-cross"><span className="conflict-cross-line is-a" /><span className="conflict-cross-line is-b" /></span> : null}
                         </div>
                       </div>
-                      <PlanCard screening={item} popularity={popularity[item.id] || 0} onRemove={removeScreening} onOpenFilm={openFilm} />
+                      <PlanCard
+                        screening={item}
+                        note={planNotes[item.id] || ''}
+                        popularity={popularity[item.id] || 0}
+                        onEditNote={editPlanNote}
+                        onRemove={removeScreening}
+                        onOpenFilm={openFilm}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1966,10 +2110,31 @@ function PlanPage({
   )
 }
 
-function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmId, loading, error, updatedAt, onRefresh, onAbout, openFilm }) {
-  const rows = useMemo(() => buildPopularityRows(screenings, popularity), [screenings, popularity])
+function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmId, loading, error, updatedAt, visibleLimit, onRefresh, onLoadMore, onAbout, openFilm }) {
+  const loadMoreRef = useRef(null)
+  const loadMoreTriggerRef = useRef(0)
+  const rankRows = useMemo(() => buildPopularityRows(screenings, popularity, POPULARITY_RANK_MAX_LIMIT), [screenings, popularity])
+  const rows = useMemo(() => rankRows.slice(0, visibleLimit), [rankRows, visibleLimit])
+  const canLoadMore = visibleLimit < POPULARITY_RANK_MAX_LIMIT && rows.length < rankRows.length
   const max = rows[0]?.popularityCount || 1
   const meta = `来自「${APP_SHARE_NAME}」用户的真实选场数据 · ${formatRankUpdatedAt(updatedAt)}`
+
+  useEffect(() => {
+    if (!loading) loadMoreTriggerRef.current = 0
+  }, [loading])
+
+  useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !canLoadMore || loading || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      if (loadMoreTriggerRef.current === visibleLimit) return
+      loadMoreTriggerRef.current = visibleLimit
+      onLoadMore()
+    }, { rootMargin: '160px 0px 260px', threshold: 0.01 })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [canLoadMore, loading, onLoadMore, visibleLimit])
 
   return (
     <div className="page popularity-page">
@@ -2020,6 +2185,7 @@ function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmI
               </button>
             )
           })}
+          <div className="popularity-load-sentinel" ref={loadMoreRef} aria-hidden="true" />
         </div>
       ) : (
         <div className="popularity-empty">
@@ -2027,6 +2193,11 @@ function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmI
           <div className="empty-sentence">{loading ? '稍等一下，榜单很快就来。' : '等有用户排片后，这里会显示最热门的场次。'}</div>
         </div>
       )}
+      {rows.length && loading ? (
+        <div className="popularity-list-footer">
+          <span className="popularity-footer-spinner" aria-label="加载中" />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -2150,12 +2321,13 @@ function ImportDialog({ mode, text, onText, onClose, onImport, onCopy }) {
   )
 }
 
-function ExportActionSheet({ open, onClose, onPoster, onText }) {
+function ExportActionSheet({ open, onClose, onPoster, onText, onTicket }) {
   if (!open) return null
   return (
     <div className="action-sheet-mask" onClick={onClose}>
       <div className="action-sheet" onClick={event => event.stopPropagation()}>
         <button className="action-sheet-item" type="button" onClick={onPoster}>导出长图</button>
+        <button className="action-sheet-item" type="button" onClick={onTicket}>导出求票 / 出票 / 换票图</button>
         <button className="action-sheet-item" type="button" onClick={onText}>导出文字版（发给朋友一键导入）</button>
         <button className="action-sheet-cancel" type="button" onClick={onClose}>取消</button>
       </div>
@@ -2163,50 +2335,305 @@ function ExportActionSheet({ open, onClose, onPoster, onText }) {
   )
 }
 
-function PosterSheet({ open, theme, setTheme, includePosters, setIncludePosters, includePopularity, setIncludePopularity, summary, onClose, onConfirm }) {
+function PosterSheet({ open, theme, setTheme, includePosters, setIncludePosters, includePopularity, setIncludePopularity, includeNotes, setIncludeNotes, preview, previewLoading, onClose, onConfirm }) {
   if (!open) return null
+  const activeTemplate = getPosterTheme(theme)
+  const isPosterWall = activeTemplate.layout === 'wall'
   return (
     <div className="poster-mask" onClick={onClose}>
-      <div className="poster-sheet" onClick={event => event.stopPropagation()}>
-        <div className="poster-grip" />
-        <div className="poster-sheet-title">导出长图</div>
-        <div className="poster-sheet-meta">{summary}</div>
-        <div className="poster-field-title">颜色模板</div>
-        <div className="poster-theme-row">
-          {POSTER_THEMES.map(item => (
-            <button className={`poster-theme ${theme === item.key ? 'is-picked' : ''}`} type="button" key={item.key} onClick={() => setTheme(item.key)}>
-              <span className="poster-theme-swatch" style={{ background: item.swatch }} />
-              <span>{item.label}</span>
-            </button>
-          ))}
+      <div className="poster-export-panel" onClick={event => event.stopPropagation()}>
+        <div className="poster-live-preview">
+          <div className={`poster-live-preview-frame ${isPosterWall ? 'is-wall' : ''}`}>
+            {preview ? (
+              <img className="poster-live-preview-image" src={preview.url} alt="海报预览" />
+            ) : (
+              <div className="poster-live-preview-empty">{previewLoading ? '生成预览中' : '暂无预览'}</div>
+            )}
+          </div>
         </div>
-        <button
-          className="poster-option-row"
-          type="button"
-          role="switch"
-          aria-checked={includePosters}
-          onClick={() => setIncludePosters(!includePosters)}
-        >
-          <span className="poster-option-text">包含电影海报</span>
-          <span className={`poster-toggle ${includePosters ? 'is-on' : ''}`}>
-            <span className="poster-toggle-knob" />
-          </span>
-        </button>
-        <button
-          className="poster-option-row"
-          type="button"
-          role="switch"
-          aria-checked={includePopularity}
-          onClick={() => setIncludePopularity(!includePopularity)}
-        >
-          <span className="poster-option-text">包含热度信息</span>
-          <span className={`poster-toggle ${includePopularity ? 'is-on' : ''}`}>
-            <span className="poster-toggle-knob" />
-          </span>
-        </button>
+        <div className="poster-sheet">
+          <div className="poster-grip" />
+          <div className="poster-sheet-head">
+            <div>
+              <div className="poster-sheet-title">导出长图</div>
+            </div>
+            {previewLoading ? <span className="poster-preview-spinner" aria-label="生成预览中" /> : null}
+          </div>
+          <div className="poster-field-title">模板</div>
+          <div className="poster-theme-row">
+            {POSTER_THEMES.map(item => (
+              <button className={`poster-theme ${theme === item.key ? 'is-picked' : ''}`} type="button" key={item.key} onClick={() => setTheme(item.key)}>
+                <span className="poster-theme-swatch" style={{ background: item.swatch }} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+          {!isPosterWall ? (
+            <>
+              <button
+                className="poster-option-row"
+                type="button"
+                role="switch"
+                aria-checked={includePosters}
+                onClick={() => setIncludePosters(!includePosters)}
+              >
+                <span className="poster-option-text">电影海报</span>
+                <span className={`poster-toggle ${includePosters ? 'is-on' : ''}`}>
+                  <span className="poster-toggle-knob" />
+                </span>
+              </button>
+              <button
+                className="poster-option-row"
+                type="button"
+                role="switch"
+                aria-checked={includePopularity}
+                onClick={() => setIncludePopularity(!includePopularity)}
+              >
+                <span className="poster-option-text">热度信息</span>
+                <span className={`poster-toggle ${includePopularity ? 'is-on' : ''}`}>
+                  <span className="poster-toggle-knob" />
+                </span>
+              </button>
+              <button
+                className="poster-option-row"
+                type="button"
+                role="switch"
+                aria-checked={includeNotes}
+                onClick={() => setIncludeNotes(!includeNotes)}
+              >
+                <span className="poster-option-text">备注</span>
+                <span className={`poster-toggle ${includeNotes ? 'is-on' : ''}`}>
+                  <span className="poster-toggle-knob" />
+                </span>
+              </button>
+            </>
+          ) : null}
+          <div className="poster-actions">
+            <button className="poster-secondary" type="button" onClick={onClose}>取消</button>
+            <button className={`poster-primary ${previewLoading ? 'is-disabled' : ''}`} type="button" onClick={onConfirm} disabled={previewLoading}>{previewLoading ? '生成中' : '生成长图'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const TICKET_TYPES = [
+  { key: 'seek', label: '求票', hint: '我想要这场票' },
+  { key: 'offer', label: '出票', hint: '我有富余票转出' },
+  { key: 'swap', label: '换票', hint: '我的票换你的票' }
+]
+
+function ticketScreeningBrief(item) {
+  const day = String(item.dayLabel || item.date || '').trim()
+  const time = item.start || ''
+  const venue = compact([item.cinema, item.hall])
+  return compact([`${day} ${time}`.trim(), venue])
+}
+
+// 票务图导出表单（合并版：类型 → 场次 → 联系方式）
+function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId, onClose, onGenerate }) {
+  const [type, setType] = useState('offer')
+  // 选中场次：id -> { price, seat }；换票分两组
+  const [picked, setPicked] = useState({})
+  const [givePicked, setGivePicked] = useState({})
+  const [wantPicked, setWantPicked] = useState({})
+  const [query, setQuery] = useState('')
+  const [giveQuery, setGiveQuery] = useState('')
+  const [wantQuery, setWantQuery] = useState('')
+  const [contactMode, setContactMode] = useState('text')
+  const [contactValue, setContactValue] = useState('')
+  const [qrSrc, setQrSrc] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setType('offer')
+    setPicked({})
+    setGivePicked({})
+    setWantPicked({})
+    setQuery('')
+    setGiveQuery('')
+    setWantQuery('')
+    setContactMode('text')
+    setContactValue('')
+    setQrSrc('')
+    setBusy(false)
+  }, [open])
+
+  if (!open) return null
+
+  const plannedSet = new Set(selectedIds || [])
+  const planned = (allScreenings || []).filter(item => plannedSet.has(item.id))
+
+  // 根据搜索词过滤候选场次：空词时只显示已排片，有词时搜全部
+  const candidatesFor = q => {
+    const text = String(q || '').trim().toLowerCase()
+    if (!text) return planned
+    return (allScreenings || []).filter(item => (item.searchText || '').includes(text)).slice(0, 30)
+  }
+
+  const togglePick = (store, setStore, id) => {
+    setStore(prev => {
+      const next = { ...prev }
+      if (next[id]) delete next[id]
+      else next[id] = { price: '', seat: '' }
+      return next
+    })
+  }
+  const updateField = (setStore, id, key, value) => {
+    setStore(prev => (prev[id] ? { ...prev, [id]: { ...prev[id], [key]: value } } : prev))
+  }
+
+  const buildScreeningSpec = (id, fields) => {
+    const item = (allScreenings || []).find(s => s.id === id)
+    if (!item) return null
+    return {
+      cnTitle: item.cnTitle,
+      dayLabel: item.dayLabel,
+      date: item.date,
+      start: item.start,
+      end: item.end,
+      cinema: item.cinema,
+      hall: item.hall,
+      posterSrc: (posterSrcByFilmId && posterSrcByFilmId[item.filmId]) || item.posterSrc || '',
+      price: fields ? fields.price : '',
+      seat: fields ? fields.seat : ''
+    }
+  }
+
+  const selectedCount = type === 'swap'
+    ? Object.keys(givePicked).length + Object.keys(wantPicked).length
+    : Object.keys(picked).length
+
+  const canGenerate = type === 'swap'
+    ? Object.keys(givePicked).length > 0 && Object.keys(wantPicked).length > 0
+    : Object.keys(picked).length > 0
+
+  const handleGenerate = async () => {
+    if (!canGenerate || busy) return
+    setBusy(true)
+    const contact = { mode: contactMode, value: contactValue.trim(), qrSrc: contactMode === 'qr' ? qrSrc : '' }
+    let spec
+    if (type === 'swap') {
+      spec = {
+        type,
+        give: Object.entries(givePicked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
+        want: Object.entries(wantPicked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
+        contact
+      }
+    } else {
+      spec = {
+        type,
+        screenings: Object.entries(picked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
+        contact
+      }
+    }
+    await onGenerate(spec)
+    setBusy(false)
+  }
+
+  const onPickQr = event => {
+    const file = event.target.files && event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setQrSrc(String(reader.result || ''))
+    reader.readAsDataURL(file)
+  }
+
+  const renderPickList = (candidates, store, setStore) => (
+    <div className="ticket-pick">
+      {candidates.length === 0 ? (
+        <div className="ticket-empty">没有匹配的场次</div>
+      ) : candidates.map(item => {
+        const sel = !!store[item.id]
+        return (
+          <div key={item.id}>
+            <button className={`ticket-pickrow ${sel ? 'is-sel' : ''}`} type="button" onClick={() => togglePick(store, setStore, item.id)}>
+              <span className={`ticket-chk ${sel ? 'is-on' : ''}`} />
+              <span className="ticket-pk-body">
+                <span className="ticket-pk-film">{item.cnTitle}</span>
+                <span className="ticket-pk-meta">{ticketScreeningBrief(item)}</span>
+              </span>
+            </button>
+            {sel ? (
+              <div className="ticket-opt">
+                <div className="ticket-field">
+                  <span className="ticket-fl">票价（可选）</span>
+                  <input className="ticket-fi" value={store[item.id].price} placeholder="如 ¥80" onChange={e => updateField(setStore, item.id, 'price', e.target.value)} />
+                </div>
+                <div className="ticket-field">
+                  <span className="ticket-fl">座位号（可选）</span>
+                  <input className="ticket-fi" value={store[item.id].seat} placeholder="如 5 排 7-8" onChange={e => updateField(setStore, item.id, 'seat', e.target.value)} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <div className="poster-mask" onClick={onClose}>
+      <div className="poster-sheet ticket-sheet" onClick={event => event.stopPropagation()}>
+        <div className="poster-grip" />
+        <div className="poster-sheet-head">
+          <div className="poster-sheet-title">导出票务图</div>
+        </div>
+
+        <div className="ticket-scroll">
+          <div className="poster-field-title">类型</div>
+          <div className="ticket-type-row">
+            {TICKET_TYPES.map(t => (
+              <button key={t.key} className={`ticket-type is-${t.key} ${type === t.key ? 'is-on' : ''}`} type="button" onClick={() => setType(t.key)}>
+                <span className="ticket-type-nm">{t.label}</span>
+                <span className="ticket-type-hint">{t.hint}</span>
+              </button>
+            ))}
+          </div>
+
+          {type === 'swap' ? (
+            <>
+              <div className="poster-field-title ticket-give">我出（手里的票）</div>
+              <input className="ticket-search" value={giveQuery} placeholder="已排片里选，或搜全部场次…" onChange={e => setGiveQuery(e.target.value)} />
+              {renderPickList(candidatesFor(giveQuery), givePicked, setGivePicked)}
+
+              <div className="poster-field-title ticket-want">我求（想要的票）</div>
+              <input className="ticket-search" value={wantQuery} placeholder="搜索想换的场次…" onChange={e => setWantQuery(e.target.value)} />
+              {renderPickList(candidatesFor(wantQuery), wantPicked, setWantPicked)}
+            </>
+          ) : (
+            <>
+              <div className="poster-field-title">场次（可多选 · 搜索新增）</div>
+              <input className="ticket-search" value={query} placeholder="已排片里选，或搜全部场次…" onChange={e => setQuery(e.target.value)} />
+              {renderPickList(candidatesFor(query), picked, setPicked)}
+            </>
+          )}
+
+          <div className="poster-field-title">联系方式（二选一）</div>
+          <div className="ticket-ctype">
+            <button className={`ticket-c ${contactMode === 'text' ? 'is-on' : ''}`} type="button" onClick={() => setContactMode('text')}>文字号码</button>
+            <button className={`ticket-c ${contactMode === 'qr' ? 'is-on' : ''}`} type="button" onClick={() => setContactMode('qr')}>二维码</button>
+          </div>
+          {contactMode === 'text' ? (
+            <input className="ticket-input" value={contactValue} placeholder="如微信号 moviefan_88" onChange={e => setContactValue(e.target.value)} />
+          ) : (
+            <>
+              <label className="ticket-upload">
+                {qrSrc ? <img className="ticket-qr-preview" src={qrSrc} alt="二维码" /> : <span className="ticket-upload-text">上传微信 / 收款二维码图片</span>}
+                <input type="file" accept="image/*" hidden onChange={onPickQr} />
+              </label>
+              <input className="ticket-input" value={contactValue} placeholder="二维码旁的说明（可选，如 加我约票）" onChange={e => setContactValue(e.target.value)} />
+            </>
+          )}
+        </div>
+
         <div className="poster-actions">
           <button className="poster-secondary" type="button" onClick={onClose}>取消</button>
-          <button className="poster-primary" type="button" onClick={onConfirm}>生成长图</button>
+          <button className={`poster-primary ${!canGenerate || busy ? 'is-disabled' : ''}`} type="button" onClick={handleGenerate} disabled={!canGenerate || busy}>
+            {busy ? '生成中' : selectedCount ? `生成 · 已选 ${selectedCount} 场` : '生成长图'}
+          </button>
         </div>
       </div>
     </div>
@@ -2541,6 +2968,43 @@ function SchemeDeleteDialog({ open, onClose, onConfirm }) {
   )
 }
 
+function PlanNoteDialog({ open, title, value, onValue, onClose, onConfirm }) {
+  useEffect(() => {
+    if (!open) return
+    const timer = window.setTimeout(() => {
+      const input = document.querySelector('.plan-note-input')
+      if (input) input.focus()
+    }, 30)
+    return () => window.clearTimeout(timer)
+  }, [open])
+
+  if (!open) return null
+
+  return (
+    <div className="wechat-modal-mask" onClick={onClose}>
+      <div className="wechat-modal" onClick={event => event.stopPropagation()}>
+        <div className="wechat-modal-title">场次备注</div>
+        <div className="plan-note-dialog-title">{title}</div>
+        <textarea
+          className="plan-note-input"
+          value={value}
+          onChange={event => onValue(event.target.value)}
+          onKeyDown={event => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') onConfirm()
+          }}
+          placeholder="比如：让 A 抢、已抢到"
+          maxLength={PLAN_NOTE_MAX_LENGTH}
+        />
+        <div className="plan-note-dialog-hint">{value.length}/{PLAN_NOTE_MAX_LENGTH}</div>
+        <div className="wechat-modal-actions">
+          <button className="wechat-modal-button" type="button" onClick={onClose}>取消</button>
+          <button className="wechat-modal-button is-confirm" type="button" onClick={onConfirm}>保存</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Toast({ message }) {
   if (!message) return null
   return <div className="toast">{message}</div>
@@ -2570,15 +3034,22 @@ export default function FestivalWebApp() {
   const [posterTheme, setPosterTheme] = useState('list')
   const [posterIncludePosters, setPosterIncludePosters] = useState(false)
   const [posterIncludePopularity, setPosterIncludePopularity] = useState(false)
+  const [posterIncludeNotes, setPosterIncludeNotes] = useState(false)
+  const [posterDraftPreview, setPosterDraftPreview] = useState(null)
+  const [posterDraftLoading, setPosterDraftLoading] = useState(false)
   const [posterPreview, setPosterPreview] = useState(null)
+  const [ticketSheetOpen, setTicketSheetOpen] = useState(false)
   const [imagePreview, setImagePreview] = useState(null)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [popularityRankCounts, setPopularityRankCounts] = useState({})
   const [popularityRankUpdatedAt, setPopularityRankUpdatedAt] = useState(0)
   const [popularityRankLoading, setPopularityRankLoading] = useState(false)
   const [popularityRankError, setPopularityRankError] = useState('')
+  const [popularityRankLimit, setPopularityRankLimit] = useState(POPULARITY_RANK_INITIAL_LIMIT)
   const [schemeDialog, setSchemeDialog] = useState(null)
   const [schemeNameDraft, setSchemeNameDraft] = useState('')
+  const [planNoteDialog, setPlanNoteDialog] = useState(null)
+  const [planNoteDraft, setPlanNoteDraft] = useState('')
   const [toast, setToast] = useState('')
   const [showScrollTop, setShowScrollTop] = useState(false)
   const toastTimerRef = useRef(null)
@@ -2640,11 +3111,15 @@ export default function FestivalWebApp() {
   const allScreeningIdsSignature = useMemo(() => allScreeningIds.join('|'), [allScreeningIds])
   const normalizedSchemes = useMemo(() => {
     const list = Array.isArray(schemes) && schemes.length ? schemes : initialSchemes()
-    return list.map((scheme, index) => ({
-      ...scheme,
-      name: scheme.name || `方案 ${index + 1}`,
-      selectedIds: uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id])
-    }))
+    return list.map((scheme, index) => {
+      const selectedSchemeIds = uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id])
+      return {
+        ...scheme,
+        name: scheme.name || `方案 ${index + 1}`,
+        selectedIds: selectedSchemeIds,
+        notes: sanitizePlanNotes(scheme.notes, validScreeningIds, selectedSchemeIds)
+      }
+    })
   }, [schemes, validScreeningIds])
   const activeScheme = normalizedSchemes.find(scheme => scheme.id === activeSchemeId) || normalizedSchemes[0]
   const selectedIds = activeScheme?.selectedIds || []
@@ -2684,16 +3159,26 @@ export default function FestivalWebApp() {
     popularityRankRequestRef.current = request
   }
 
+  const loadMorePopularityRank = () => {
+    if (popularityRankLimit >= POPULARITY_RANK_MAX_LIMIT || popularityRankLoading || popularityRankRequestRef.current) return
+    setPopularityRankLimit(Math.min(popularityRankLimit + POPULARITY_RANK_STEP, POPULARITY_RANK_MAX_LIMIT))
+    refreshPopularityRank(true)
+  }
+
   useEffect(() => {
     if (!activeSchemeId && normalizedSchemes[0]) setActiveSchemeId(normalizedSchemes[0].id)
   }, [activeSchemeId, normalizedSchemes, setActiveSchemeId])
+
+  useEffect(() => {
+    setPopularityRankLimit(POPULARITY_RANK_INITIAL_LIMIT)
+  }, [allScreeningIdsSignature, festivalId])
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
   }, [])
 
   useEffect(() => {
-    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog)
+    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog || planNoteDialog)
     if (!hasBlockingOverlay || typeof document === 'undefined') return
     const body = document.body
     const scrollY = window.scrollY || 0
@@ -2715,7 +3200,7 @@ export default function FestivalWebApp() {
       body.style.width = previousWidth
       window.scrollTo(0, scrollY)
     }
-  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog])
+  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog, planNoteDialog])
 
   useEffect(() => {
     setMarks(prev => applyFilmMarkAliases(films, prev))
@@ -2737,6 +3222,34 @@ export default function FestivalWebApp() {
   useEffect(() => {
     if (tab === 'popularity') refreshPopularityRank(false)
   }, [tab, allScreeningIdsSignature, festivalId])
+
+  useEffect(() => {
+    if (!posterSheetOpen || !plan.selected.length) {
+      setPosterDraftPreview(null)
+      setPosterDraftLoading(false)
+      return undefined
+    }
+    let cancelled = false
+    setPosterDraftLoading(true)
+    setPosterDraftPreview(null)
+    createPlanPosterImage(plan, {
+      festivalName,
+      theme: posterTheme,
+      includePosters: posterIncludePosters,
+      includePopularity: posterIncludePopularity,
+      includeNotes: posterIncludeNotes,
+      posterSrcByFilmId,
+      popularity,
+      notes: activeScheme?.notes || {}
+    }).then(image => {
+      if (!cancelled) setPosterDraftPreview(image)
+    }).catch(() => {
+      if (!cancelled) setPosterDraftPreview(null)
+    }).finally(() => {
+      if (!cancelled) setPosterDraftLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [posterSheetOpen, plan, festivalName, posterTheme, posterIncludePosters, posterIncludePopularity, posterIncludeNotes, posterSrcByFilmId, popularity, activeScheme?.notes])
 
   useEffect(() => {
     if (scheduleFieldConfig.popularity === false) {
@@ -2792,11 +3305,13 @@ export default function FestivalWebApp() {
 
   const setActiveSelectedIds = (ids, smartPlanMeta) => {
     const targetId = activeScheme?.id || normalizedSchemes[0]?.id || DEFAULT_SCHEME_ID
+    const nextIds = uniqueIds(ids)
     setSchemes(prev => {
       const list = Array.isArray(prev) && prev.length ? prev : initialSchemes()
       return list.map(scheme => scheme.id === targetId ? {
         ...scheme,
-        selectedIds: uniqueIds(ids),
+        selectedIds: nextIds,
+        notes: sanitizePlanNotes(scheme.notes, validScreeningIds, nextIds),
         smartPlanMeta: smartPlanMeta === undefined ? scheme.smartPlanMeta : smartPlanMeta,
         updatedAt: Date.now()
       } : scheme)
@@ -2858,6 +3373,34 @@ export default function FestivalWebApp() {
     setSchemes(prev => prev.map(item => item.id === id ? { ...item, name: name.trim().slice(0, 16), updatedAt: Date.now() } : item))
     setSchemeDialog(null)
     showToast('已改名')
+  }
+
+  const editPlanNote = screening => {
+    if (!screening || !activeScheme) return
+    setPlanNoteDialog({
+      screeningId: screening.id,
+      title: `${screening.timeRange}｜${screening.cnTitle}`
+    })
+    setPlanNoteDraft(activeScheme.notes?.[screening.id] || '')
+  }
+
+  const confirmPlanNote = () => {
+    const screeningId = planNoteDialog?.screeningId
+    if (!screeningId || !activeScheme) return
+    const text = planNoteDraft.trim().slice(0, PLAN_NOTE_MAX_LENGTH)
+    setSchemes(prev => {
+      const list = Array.isArray(prev) && prev.length ? prev : initialSchemes()
+      return list.map(scheme => {
+        if (scheme.id !== activeScheme.id) return scheme
+        const notes = sanitizePlanNotes(scheme.notes, validScreeningIds, scheme.selectedIds)
+        if (text) notes[screeningId] = text
+        else delete notes[screeningId]
+        return { ...scheme, notes, updatedAt: Date.now() }
+      })
+    })
+    setPlanNoteDialog(null)
+    setPlanNoteDraft('')
+    showToast(text ? '备注已保存' : '备注已清除')
   }
 
   const deleteScheme = () => {
@@ -2978,7 +3521,8 @@ export default function FestivalWebApp() {
     setExportSheetOpen(false)
     const text = formatPlanText(plan, {
       festivalName,
-      schemeName: activeScheme?.name
+      schemeName: activeScheme?.name,
+      notes: activeScheme?.notes
     })
     try {
       await navigator.clipboard.writeText(text)
@@ -2994,17 +3538,38 @@ export default function FestivalWebApp() {
     setExportSheetOpen(false)
     setPosterIncludePosters(false)
     setPosterIncludePopularity(false)
+    setPosterIncludeNotes(false)
+    setPosterDraftPreview(null)
     setPosterSheetOpen(true)
   }
 
+  const openTicketExport = () => {
+    trackUsageEvent('export_ticket', festivalId)
+    setExportSheetOpen(false)
+    setTicketSheetOpen(true)
+  }
+
+  const generateTicketPoster = async spec => {
+    const image = await createTicketPosterImage(spec, { festivalName })
+    if (image) {
+      setTicketSheetOpen(false)
+      setPosterPreview(image)
+      showToast('票务图已生成')
+    } else {
+      showToast('生成失败')
+    }
+  }
+
   const confirmPosterExport = async () => {
-    const image = await createPlanPosterImage(plan, {
+    const image = posterDraftPreview || await createPlanPosterImage(plan, {
       festivalName,
       theme: posterTheme,
       includePosters: posterIncludePosters,
       includePopularity: posterIncludePopularity,
+      includeNotes: posterIncludeNotes,
       posterSrcByFilmId,
-      popularity
+      popularity,
+      notes: activeScheme?.notes || {}
     })
     if (image) {
       setPosterPreview(image)
@@ -3028,14 +3593,18 @@ export default function FestivalWebApp() {
         return
       }
       const payload = parseImportText(importText)
-      const nextSchemes = payload.schemes.map((scheme, index) => ({
-        id: String(scheme.id || `import_${Date.now()}_${index}`),
-        name: String(scheme.name || `方案 ${index + 1}`).slice(0, 16),
-        selectedIds: uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id]),
-        smartPlanMeta: scheme.smartPlanMeta || null,
-        createdAt: scheme.createdAt || Date.now(),
-        updatedAt: Date.now()
-      }))
+      const nextSchemes = payload.schemes.map((scheme, index) => {
+        const importedSelectedIds = uniqueIds(scheme.selectedIds).filter(id => validScreeningIds[id])
+        return {
+          id: String(scheme.id || `import_${Date.now()}_${index}`),
+          name: String(scheme.name || `方案 ${index + 1}`).slice(0, 16),
+          selectedIds: importedSelectedIds,
+          notes: sanitizePlanNotes(scheme.notes, validScreeningIds, importedSelectedIds),
+          smartPlanMeta: scheme.smartPlanMeta || null,
+          createdAt: scheme.createdAt || Date.now(),
+          updatedAt: Date.now()
+        }
+      })
       setSchemes(nextSchemes.length ? nextSchemes : initialSchemes())
       setActiveSchemeId(payload.activeSchemeId || nextSchemes[0]?.id || DEFAULT_SCHEME_ID)
       setMarks(payload.marks && typeof payload.marks === 'object' ? payload.marks : {})
@@ -3103,6 +3672,7 @@ export default function FestivalWebApp() {
           openImport={openImport}
           openExport={openExport}
           removeScreening={toggleScreening}
+          editPlanNote={editPlanNote}
           openFilm={openFilm}
           popularity={popularity}
         />
@@ -3116,7 +3686,9 @@ export default function FestivalWebApp() {
           loading={popularityRankLoading}
           error={popularityRankError}
           updatedAt={popularityRankUpdatedAt}
+          visibleLimit={popularityRankLimit}
           onRefresh={() => refreshPopularityRank(true)}
+          onLoadMore={loadMorePopularityRank}
           onAbout={openAbout}
           openFilm={openFilm}
         />
@@ -3145,7 +3717,15 @@ export default function FestivalWebApp() {
         </button>
       ) : null}
       <SmartPlanModal open={smartOpen} onClose={() => !smartLoading && setSmartOpen(false)} onSubmit={runSmartPlan} loading={smartLoading} progress={smartProgress} error={smartError} />
-      <ExportActionSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} onPoster={openPosterExport} onText={openTextExport} />
+      <ExportActionSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} onPoster={openPosterExport} onText={openTextExport} onTicket={openTicketExport} />
+      <TicketPosterSheet
+        open={ticketSheetOpen}
+        allScreenings={allScreenings}
+        selectedIds={selectedIds}
+        posterSrcByFilmId={posterSrcByFilmId}
+        onClose={() => setTicketSheetOpen(false)}
+        onGenerate={generateTicketPoster}
+      />
       <PosterSheet
         open={posterSheetOpen}
         theme={posterTheme}
@@ -3154,7 +3734,10 @@ export default function FestivalWebApp() {
         setIncludePosters={setPosterIncludePosters}
         includePopularity={posterIncludePopularity}
         setIncludePopularity={setPosterIncludePopularity}
-        summary={`${plan.selected.length} 场 · ${formatMinutes(plan.totalMinutes)}`}
+        includeNotes={posterIncludeNotes}
+        setIncludeNotes={setPosterIncludeNotes}
+        preview={posterDraftPreview}
+        previewLoading={posterDraftLoading}
         onClose={() => setPosterSheetOpen(false)}
         onConfirm={confirmPosterExport}
       />
@@ -3196,6 +3779,17 @@ export default function FestivalWebApp() {
         open={schemeDialog?.type === 'delete'}
         onClose={() => setSchemeDialog(null)}
         onConfirm={confirmDeleteScheme}
+      />
+      <PlanNoteDialog
+        open={!!planNoteDialog}
+        title={planNoteDialog?.title || ''}
+        value={planNoteDraft}
+        onValue={setPlanNoteDraft}
+        onClose={() => {
+          setPlanNoteDialog(null)
+          setPlanNoteDraft('')
+        }}
+        onConfirm={confirmPlanNote}
       />
       <Toast message={toast} />
     </main>

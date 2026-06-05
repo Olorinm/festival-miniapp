@@ -11,6 +11,7 @@ const {
   filmRatingItems,
   filmRuntimeMinutes,
   filmSection,
+  findFilmScreenings,
   findConflicts,
   findFilm,
   getInterestMeta,
@@ -131,10 +132,10 @@ Page({
     const infoRows = buildInfoRows(rawFilm)
     const headMetaRows = buildHeadMetaRows(rawFilm)
     const posterSrc = filmPosterSrc(rawFilm)
-    const popularityMap = app.getScreeningPopularityMap((rawFilm.screenings || []).map(screening => screening.id))
     const allScreenings = buildScreenings(app.globalData.films, marks)
-    const screenings = allScreenings
-      .filter(screening => screening.filmId === rawFilm.id)
+    const relatedScreenings = findFilmScreenings(rawFilm, allScreenings)
+    const popularityMap = app.getScreeningPopularityMap(relatedScreenings.map(screening => screening.id))
+    const screenings = relatedScreenings
       .map(screening => {
         const conflicts = findConflicts(screening, selectedIds.filter(id => id !== screening.id), allScreenings)
         return {

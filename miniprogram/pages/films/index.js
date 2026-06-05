@@ -1,4 +1,5 @@
 const {
+  buildScreenings,
   collectStats,
   filmCoreMeta,
   filmCountry,
@@ -11,6 +12,7 @@ const {
   filmRuntimeMinutes,
   filmSection,
   filmYear,
+  findFilmScreenings,
   getInterestMeta,
   runtimeText,
   slashMeta
@@ -533,13 +535,15 @@ Page({
   renderFilms() {
     const marks = app.getFilmMarks()
     const selectedIds = app.getSelectedScreeningIds()
+    const allScreenings = buildScreenings(app.globalData.films, marks)
     const keyword = this.data.query.trim().toLowerCase()
     const active = this.data.activeInterest
 
     const films = app.globalData.films.map((film, index) => {
       const interest = getInterestMeta(marks[film.id] || film.defaultInterest)
       const mark = interest.key
-      const selectedCount = film.screenings.filter(screening => selectedIds.includes(screening.id)).length
+      const relatedScreenings = findFilmScreenings(film, allScreenings)
+      const selectedCount = relatedScreenings.filter(screening => selectedIds.includes(screening.id)).length
       const cnTitle = filmDisplayTitle(film)
       const enTitle = filmEnTitle(film)
       const director = filmDirector(film)
@@ -558,7 +562,7 @@ Page({
         country,
         year,
         genre,
-        film.screenings.map(screening => `${screening.cinema} ${screening.hall}`).join(' ')
+        relatedScreenings.map(screening => `${screening.cinema} ${screening.hall}`).join(' ')
       ].join(' ').toLowerCase()
 
       return {
@@ -569,7 +573,7 @@ Page({
         mark,
         interest,
         selectedCount,
-        screeningCount: film.screenings.length,
+        screeningCount: relatedScreenings.length,
         runtime,
         posterSrc,
         hasPoster: !!posterSrc,
