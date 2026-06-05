@@ -3629,7 +3629,7 @@ a {
   border-bottom: none;
 }
 
-/* 加入 / 移除：小圆按钮，加号用蓝色填充呼应选中色 */
+/* 加入 / 移除：中性小圆按钮，和外面的 .remove 一套语言 */
 .ticket-add,
 .ticket-remove {
   display: flex;
@@ -3638,16 +3638,8 @@ a {
   flex: 0 0 26px;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
-}
-
-.ticket-add {
-  background: #1d8fff;
-  color: #ffffff;
-}
-
-.ticket-remove {
   border: 1px solid #d4d7d1;
+  border-radius: 50%;
   background: #ffffff;
   color: #6b716a;
 }

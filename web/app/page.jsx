@@ -2636,18 +2636,18 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
           {type === 'swap' ? (
             <>
               <div className="poster-field-title ticket-give">我出（手里的票）</div>
-              {renderSelected(givePicked, setGivePicked)}
               {renderSearch(giveQuery, setGiveQuery, givePicked, setGivePicked, '已排片里选，或搜全部场次…')}
+              {renderSelected(givePicked, setGivePicked)}
 
               <div className="poster-field-title ticket-want">我求（想要的票）</div>
-              {renderSelected(wantPicked, setWantPicked)}
               {renderSearch(wantQuery, setWantQuery, wantPicked, setWantPicked, '搜索想换的场次…')}
+              {renderSelected(wantPicked, setWantPicked)}
             </>
           ) : (
             <>
               <div className="poster-field-title">场次（可多选 · 搜索添加）</div>
-              {renderSelected(picked, setPicked)}
               {renderSearch(query, setQuery, picked, setPicked, '已排片里选，或搜全部场次…')}
+              {renderSelected(picked, setPicked)}
             </>
           )}
 
