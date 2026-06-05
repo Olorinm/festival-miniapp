@@ -37,6 +37,25 @@ function setText(ctx, size, color, weight) {
   ctx.font = `${fontWeight(weight)} ${size}px ${FONT_FAMILY}`
 }
 
+// 在当前字体下把文字裁到 maxWidth，超出加省略号。需先 setText 设好字体。
+function truncate(ctx, text, maxWidth) {
+  const value = String(text || '')
+  if (!value || ctx.measureText(value).width <= maxWidth) return value
+  let lo = 0
+  let hi = value.length
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (ctx.measureText(value.slice(0, mid) + '…').width <= maxWidth) lo = mid
+    else hi = mid - 1
+  }
+  return lo > 0 ? value.slice(0, lo) + '…' : '…'
+}
+
+// setText + 裁切 + 绘制，一步到位
+function fillTruncated(ctx, text, x, y, maxWidth) {
+  ctx.fillText(truncate(ctx, text, maxWidth), x, y)
+}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2)
   ctx.beginPath()
@@ -141,10 +160,10 @@ function drawCover(ctx, image, x, y, w, h) {
 
 // ---- 布局测量：返回总高度，绘制时复用 ----
 const HERO_MIN = 760      // 单场满幅海报区高度
-const ROW_H = 96          // 列表行高（无价位）
-const ROW_H_EXTRA = 120   // 列表行高（有价位）
-const THUMB_W = 84
-const THUMB_H = 118
+const ROW_H = 132         // 列表行高（标题+时间+影院 三行）
+const ROW_H_EXTRA = 162   // 列表行高（多一行票价/座位）
+const THUMB_W = 92
+const THUMB_H = 130
 const GROUP_GAP = 14
 const FOOTER_H = 96
 
@@ -183,18 +202,22 @@ function drawListRow(ctx, item, x, y, width, images, type) {
   ctx.stroke()
 
   const textX = x + THUMB_W + 22
+  const textW = x + width - textX
   let cursor = y + (h - THUMB_H) / 2 + 4
   setText(ctx, 33, '#ffffff', '680')
   cursor += 30
-  ctx.fillText(item.cnTitle || '', textX, cursor)
+  fillTruncated(ctx, item.cnTitle || '', textX, cursor, textW)
   setText(ctx, 24, 'rgba(255,255,255,0.66)', '440')
   cursor += 34
-  ctx.fillText(compact([dateTimeText(item), venueText(item)]), textX, cursor)
+  // 日期时间一行、影院一行，分两行避免超长被裁掉关键信息
+  fillTruncated(ctx, dateTimeText(item), textX, cursor, textW)
+  cursor += 30
+  fillTruncated(ctx, venueText(item), textX, cursor, textW)
   const extra = extraText(item)
   if (extra) {
     setText(ctx, 23, TYPE_META[type].priceTint, '560')
-    cursor += 32
-    ctx.fillText(extra, textX, cursor)
+    cursor += 30
+    fillTruncated(ctx, extra, textX, cursor, textW)
   }
   return h
 }
@@ -229,7 +252,7 @@ function drawFooter(ctx, spec, images, x, y, width) {
     ctx.restore()
     if (value) {
       setText(ctx, 24, 'rgba(255,255,255,0.82)', '560')
-      ctx.fillText(value, x + qrSize + 20, top + 56)
+      fillTruncated(ctx, value, x + qrSize + 20, top + 56, width - qrSize - 20)
     }
   } else if (value) {
     // 文字胶囊
@@ -335,20 +358,21 @@ function paint(ctx, spec, layout, images) {
       // 徽标右上
       drawBadge(ctx, spec.type, WIDTH - PAD, PAD)
       // 底部信息
+      const heroW = WIDTH - PAD * 2
       let cy = block.h - PAD - 200
       setText(ctx, 52, '#fff', '720')
-      ctx.fillText(item.cnTitle || '', PAD, cy)
+      fillTruncated(ctx, item.cnTitle || '', PAD, cy, heroW)
       setText(ctx, 27, 'rgba(255,255,255,0.9)', '560')
       cy += 44
-      ctx.fillText(dateTimeText(item), PAD, cy)
+      fillTruncated(ctx, dateTimeText(item), PAD, cy, heroW)
       setText(ctx, 27, 'rgba(255,255,255,0.9)', '440')
       cy += 38
-      ctx.fillText(venueText(item), PAD, cy)
+      fillTruncated(ctx, venueText(item), PAD, cy, heroW)
       const extra = extraText(item)
       if (extra) {
         setText(ctx, 25, TYPE_META[spec.type].priceTint, '560')
         cy += 36
-        ctx.fillText(extra, PAD, cy)
+        fillTruncated(ctx, extra, PAD, cy, heroW)
       }
       // 联系 + 小字（压在海报底部）
       drawFooterInline(ctx, spec, images, PAD, block.h - PAD - 6)

@@ -2559,7 +2559,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
             {sel ? (
               <div className="ticket-opt">
                 <div className="ticket-field">
-                  <span className="ticket-fl">票价（可选）</span>
+                  <span className="ticket-fl">票价（可选，请勿高于原价）</span>
                   <input className="ticket-fi" value={store[item.id].price} placeholder="如 ¥80" onChange={e => updateField(setStore, item.id, 'price', e.target.value)} />
                 </div>
                 <div className="ticket-field">
@@ -2576,7 +2576,8 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
 
   return (
     <div className="poster-mask" onClick={onClose}>
-      <div className="poster-sheet ticket-sheet" onClick={event => event.stopPropagation()}>
+      <div className="poster-export-panel ticket-panel">
+        <div className="poster-sheet ticket-sheet" onClick={event => event.stopPropagation()}>
         <div className="poster-grip" />
         <div className="poster-sheet-head">
           <div className="poster-sheet-title">导出票务图</div>
@@ -2621,7 +2622,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
           ) : (
             <>
               <label className="ticket-upload">
-                {qrSrc ? <img className="ticket-qr-preview" src={qrSrc} alt="二维码" /> : <span className="ticket-upload-text">上传微信 / 收款二维码图片</span>}
+                {qrSrc ? <img className="ticket-qr-preview" src={qrSrc} alt="二维码" /> : <span className="ticket-upload-text">上传二维码图片</span>}
                 <input type="file" accept="image/*" hidden onChange={onPickQr} />
               </label>
               <input className="ticket-input" value={contactValue} placeholder="二维码旁的说明（可选，如 加我约票）" onChange={e => setContactValue(e.target.value)} />
@@ -2634,6 +2635,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
           <button className={`poster-primary ${!canGenerate || busy ? 'is-disabled' : ''}`} type="button" onClick={handleGenerate} disabled={!canGenerate || busy}>
             {busy ? '生成中' : selectedCount ? `生成 · 已选 ${selectedCount} 场` : '生成长图'}
           </button>
+        </div>
         </div>
       </div>
     </div>
