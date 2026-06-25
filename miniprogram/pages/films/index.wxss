@@ -1,5 +1,5 @@
 .films-page {
-  padding: 16rpx 24rpx 64rpx 24rpx;
+  padding: 16rpx 24rpx calc(188rpx + env(safe-area-inset-bottom)) 24rpx;
   background: #ffffff;
 }
 
@@ -36,9 +36,19 @@
   white-space: nowrap;
 }
 
-.film-filter-scroll {
+.film-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
   width: auto;
   margin: 18rpx 2rpx 20rpx 8rpx;
+}
+
+.film-filter-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin: 0;
   padding: 2rpx 0;
   white-space: nowrap;
 }
@@ -546,6 +556,17 @@
   gap: 8rpx;
   min-width: 0;
   margin-top: 12rpx;
+}
+
+.film-synopsis {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 10rpx;
+  color: #5d635c;
+  font-size: 22rpx;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .film-section {

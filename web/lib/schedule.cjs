@@ -1,5 +1,15 @@
+// @paired-with miniprogram/utils/schedule.js
+// @platform-divergence: static commute-routes import; web poster asset handling; compact card meta
 const { interestOptions: fallbackInterestOptions } = require('./festival')
 const commuteRoutes = require('./commute-routes.cjs')
+const {
+  buildPlan,
+  byScreeningTime,
+  findConflicts,
+  groupByDay,
+  resolveScreeningTiming,
+  toMinutes
+} = require('./shared/schedule-core.cjs')
 
 const MAX_WALKING_COMMUTE_MIN = 75
 const MAX_WALKING_ROUTE_RATIO = 3
@@ -50,24 +60,6 @@ function resolveScreeningInterest(film, filmById, filmMarks) {
     const interest = getFilmInterest(sourceFilm, filmMarks)
     return interest.rank > best.rank ? interest : best
   }, noInterest)
-}
-
-function toMinutes(time) {
-  const parts = String(time).split(':')
-  const hour = Number(parts[0] || 0)
-  const minute = Number(parts[1] || 0)
-  return hour * 60 + minute
-}
-
-function endMinutes(screening) {
-  const start = toMinutes(screening.start)
-  const end = toMinutes(screening.end)
-  return end <= start ? end + 24 * 60 : end
-}
-
-function byScreeningTime(a, b) {
-  const dateOrder = a.date.localeCompare(b.date)
-  return dateOrder || toMinutes(a.start) - toMinutes(b.start)
 }
 
 function routeKey(from, to) {
@@ -191,6 +183,8 @@ function buildScreenings(films, marks) {
       const rows = film.screenings.map(screening => {
         const ticket = sanitizeTicketText(screening.ticket)
         const ticketPlan = sanitizeTicketText(screening.ticketPlan || ticket)
+        const runtime = filmRuntimeMinutes(film)
+        const timing = resolveScreeningTiming(screening, runtime)
         return {
           filmId: film.id,
           cnTitle: filmDisplayTitle(film),
@@ -199,7 +193,7 @@ function buildScreenings(films, marks) {
           director: filmDirector(film),
           country: filmCountry(film),
           year: filmYear(film),
-          runtime: filmRuntimeMinutes(film),
+          runtime,
           posterSrc: filmPosterSrc(film),
           cardMeta: compactMeta([filmCoreMeta(film), filmDirector(film)]),
           sectionLabel: filmSection(film),
@@ -212,10 +206,12 @@ function buildScreenings(films, marks) {
           programType: film.programType || '',
           interestKey,
           interest,
-          timeRange: `${screening.start}-${screening.end}`,
-          startMinutes: toMinutes(screening.start),
-          endMinutes: endMinutes(screening),
-          duration: endMinutes(screening) - toMinutes(screening.start),
+          timeRange: screening.end ? `${screening.start}-${screening.end}` : screening.start,
+          startMinutes: timing.startMinutes,
+          endMinutes: timing.endMinutes,
+          duration: timing.duration,
+          durationKnown: timing.durationKnown,
+          hasUnknownDuration: !timing.durationKnown,
           screenMeta: filmScreeningMeta(film),
           searchText: [
             filmDisplayTitle(film),
@@ -428,74 +424,6 @@ function isRelatedScreeningForFilm(screening, film) {
 
 function findFilmScreenings(film, allScreenings) {
   return (allScreenings || []).filter(screening => isRelatedScreeningForFilm(screening, film))
-}
-
-function hasOverlap(a, b) {
-  if (!a || !b || a.id === b.id || a.date !== b.date) {
-    return false
-  }
-  return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes
-}
-
-function findConflicts(screening, selectedIds, allScreenings) {
-  const selected = allScreenings.filter(item => selectedIds.includes(item.id))
-  return selected.filter(item => hasOverlap(screening, item))
-}
-
-function groupByDay(screenings) {
-  const map = {}
-  screenings.forEach(screening => {
-    if (!map[screening.date]) {
-      map[screening.date] = {
-        date: screening.date,
-        dayLabel: screening.dayLabel,
-        items: []
-      }
-    }
-    map[screening.date].items.push(screening)
-  })
-  return Object.keys(map)
-    .sort()
-    .map(date => map[date])
-}
-
-function buildPlan(selectedIds, allScreenings) {
-  const selected = allScreenings
-    .filter(screening => selectedIds.includes(screening.id))
-    .sort(byScreeningTime)
-
-  const conflictPairs = []
-  const conflictIds = {}
-  selected.forEach((screening, index) => {
-    selected.slice(index + 1).forEach(other => {
-      if (hasOverlap(screening, other)) {
-        conflictPairs.push({
-          id: `${screening.id}_${other.id}`,
-          a: screening,
-          b: other,
-          label: `${screening.dayLabel} ${screening.timeRange} ${screening.cnTitle} / ${other.timeRange} ${other.cnTitle}`
-        })
-        conflictIds[screening.id] = true
-        conflictIds[other.id] = true
-      }
-    })
-  })
-
-  const withState = selected.map(screening => ({
-    ...screening,
-    conflict: !!conflictIds[screening.id]
-  }))
-
-  const totalPrice = withState.reduce((sum, item) => sum + (Number(item.price) || 0), 0)
-  const totalMinutes = withState.reduce((sum, item) => sum + (Number(item.duration) || 0), 0)
-
-  return {
-    selected: withState,
-    days: groupByDay(withState),
-    conflictPairs,
-    totalPrice,
-    totalMinutes
-  }
 }
 
 function collectStats(films, selectedIds, marks) {

@@ -1,0 +1,118 @@
+<view class="app-custom-nav" style="height: {{navTotalHeight}}px;">
+  <view class="app-nav-row" style="top: {{navTop}}px; height: {{navHeight}}px; padding-right: {{navRight}}px;">
+    <navigator class="app-about-entry" url="/pages/about/index" hover-class="app-about-tap">
+      <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
+      <text>关于</text>
+    </navigator>
+    <view class="app-nav-title is-festival-title">
+      <view class="app-nav-edition">
+        <text class="app-nav-number">28</text>
+        <text class="app-nav-suffix">th</text>
+      </view>
+      <text class="app-nav-word">SIFF</text>
+    </view>
+  </view>
+</view>
+
+<view class="page popularity-page" style="padding-top: {{contentTop}}px;">
+  <view class="popularity-hero">
+    <view class="popularity-top-row">
+      <view class="popularity-rank-tabs">
+        <view
+          wx:for="{{rankTabs}}"
+          wx:key="key"
+          class="popularity-rank-tab {{activeRankType === item.key ? 'is-active' : ''}}"
+          data-type="{{item.key}}"
+          bindtap="switchRankTab"
+        >
+          {{item.label}}
+        </view>
+      </view>
+      <view class="popularity-hero-actions">
+        <view class="popularity-export" bindtap="openExportSheet" hover-class="action-tap">
+          <view class="export-icon"></view>
+          <text>导出</text>
+        </view>
+        <view class="popularity-refresh {{loading ? 'is-loading' : ''}}" bindtap="refreshTap" hover-class="action-tap">
+          <view class="refresh-icon"></view>
+          <text>{{loading ? '更新中' : '刷新'}}</text>
+        </view>
+      </view>
+    </view>
+    <view class="popularity-meta">{{metaText}}</view>
+  </view>
+
+  <view wx:if="{{error}}" class="popularity-error">{{error}}</view>
+
+  <view wx:if="{{rows.length}}" class="popularity-list">
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="popularity-row {{item.hidePoster ? 'is-no-poster' : ''}} {{item.filmId ? '' : 'is-static'}}"
+      data-film-id="{{item.filmId}}"
+      bindtap="openFilm"
+      hover-class="row-tap"
+      hover-start-time="0"
+      hover-stay-time="80"
+    >
+      <view class="popularity-rank {{item.isTop ? 'is-top' : ''}}">{{item.rank}}</view>
+      <view wx:if="{{!item.hidePoster}}" class="popularity-poster {{item.posterSrc ? '' : 'is-placeholder'}}">
+        <image wx:if="{{item.posterSrc}}" src="{{item.posterSrc}}" mode="aspectFill" lazy-load="true" />
+        <text wx:else>{{item.posterText}}</text>
+      </view>
+      <view class="popularity-info">
+        <view class="popularity-film-title">{{item.cnTitle}}</view>
+        <view class="popularity-time">{{item.primaryMeta}}</view>
+        <view class="popularity-venue">{{item.secondaryMeta}}</view>
+      </view>
+      <view class="popularity-count">
+        <text class="popularity-count-main">{{item.popularityCount}}</text>
+        <text class="popularity-count-unit">人已排</text>
+        <view class="popularity-bar">
+          <view class="{{item.isTop ? 'is-top' : ''}}" style="width: {{item.barWidth}}%;"></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else class="popularity-empty">
+    <view class="empty-title">{{loading ? '正在更新热度' : '暂无热度数据'}}</view>
+    <view class="empty-sentence">{{loading ? '稍等一下，榜单很快就来。' : '等有用户排片后，这里会显示最热门的场次。'}}</view>
+  </view>
+
+  <view wx:if="{{rows.length && loading}}" class="popularity-list-footer">
+    <view class="popularity-footer-spinner"></view>
+  </view>
+
+  <view wx:if="{{exportSheetOpen}}" class="rank-export-mask" catchtap="closeExportSheet" catchtouchmove="noop">
+    <view class="rank-export-sheet" catchtap="noop">
+      <view class="rank-export-grip"></view>
+      <view class="rank-export-title">导出热度榜</view>
+      <view class="rank-export-meta">生成当前{{activeRankLabel}}长图</view>
+      <view class="rank-export-options">
+        <view
+          wx:for="{{exportLimitOptions}}"
+          wx:key="limit"
+          class="rank-export-option {{exportLimit === item.limit ? 'is-picked' : ''}}"
+          data-limit="{{item.limit}}"
+          bindtap="selectExportLimit"
+        >
+          {{item.label}}
+        </view>
+      </view>
+      <view class="rank-export-actions">
+        <view class="rank-export-secondary" bindtap="closeExportSheet">取消</view>
+        <view class="rank-export-primary {{exporting ? 'is-disabled' : ''}}" bindtap="confirmExport">生成长图</view>
+      </view>
+    </view>
+  </view>
+
+  <canvas
+    id="popularityPoster"
+    type="2d"
+    class="popularity-poster-canvas"
+    style="width: {{exportPosterWidth}}px; height: {{exportPosterHeight}}px;"
+  ></canvas>
+
+  <view wx:if="{{showScrollTop}}" class="scroll-top-button" bindtap="scrollToTop"></view>
+</view>

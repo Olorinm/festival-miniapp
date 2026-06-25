@@ -18,6 +18,7 @@ const EVENT_NAMES = [
   'smart_error',
   'export_open',
   'export_text',
+  'export_ticket',
   'export_poster',
   'import_open',
   'import_success',

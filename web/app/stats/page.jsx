@@ -28,6 +28,7 @@ const EVENT_LABELS = {
   smart_error: 'AI 失败',
   export_open: '打开导出',
   export_text: '导出文字',
+  export_ticket: '导出票图',
   export_poster: '导出长图',
   import_open: '打开导入',
   import_success: '导入成功',
@@ -43,6 +44,7 @@ const PRIMARY_EVENTS = [
   'smart_submit',
   'smart_success',
   'export_text',
+  'export_ticket',
   'export_poster',
   'import_success'
 ]
@@ -103,7 +105,7 @@ export default async function StatsPage({ searchParams }) {
   const selected = eventTotal(days, 'select_screening')
   const marks = eventTotal(days, 'mark_film')
   const aiRuns = eventTotal(days, 'smart_submit')
-  const exportCount = eventTotal(days, 'export_text') + eventTotal(days, 'export_poster')
+  const exportCount = eventTotal(days, 'export_text') + eventTotal(days, 'export_ticket') + eventTotal(days, 'export_poster')
   const eventRows = PRIMARY_EVENTS
     .map(event => ({ event, label: EVENT_LABELS[event] || event, count: eventTotal(days, event) }))
     .filter(item => item.count > 0 || ['app_open', 'mark_film', 'select_screening', 'smart_submit'].includes(item.event))
@@ -170,7 +172,9 @@ export default async function StatsPage({ searchParams }) {
               <span>标星</span>
               <span>选场</span>
               <span>AI</span>
-              <span>导出</span>
+              <span>文字</span>
+              <span>票图</span>
+              <span>长图</span>
             </div>
             {days.map(day => (
               <div className="stats-table-row" key={day.day}>
@@ -179,7 +183,9 @@ export default async function StatsPage({ searchParams }) {
                 <span>{day.events.mark_film || 0}</span>
                 <span>{day.events.select_screening || 0}</span>
                 <span>{day.events.smart_submit || 0}</span>
-                <span>{(day.events.export_text || 0) + (day.events.export_poster || 0)}</span>
+                <span>{day.events.export_text || 0}</span>
+                <span>{day.events.export_ticket || 0}</span>
+                <span>{day.events.export_poster || 0}</span>
               </div>
             ))}
           </div>

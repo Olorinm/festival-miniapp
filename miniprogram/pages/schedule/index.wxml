@@ -4,9 +4,12 @@
       <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
       <text>关于</text>
     </navigator>
-    <view class="app-nav-title is-with-context">
-      <text class="app-nav-main">挑场次</text>
-      <text class="app-nav-context">{{festivalName}}</text>
+    <view class="app-nav-title is-festival-title">
+      <view class="app-nav-edition">
+        <text class="app-nav-number">28</text>
+        <text class="app-nav-suffix">th</text>
+      </view>
+      <text class="app-nav-word">SIFF</text>
     </view>
   </view>
 </view>
@@ -56,6 +59,12 @@
       <view class="tool-filter-chip {{fieldPanelOpen ? 'is-active' : ''}}" bindtap="toggleFieldPanel">
         <text class="filter-label">字段</text>
       </view>
+
+      <view
+        wx:if="{{hasDayGroups}}"
+        class="group-toggle-icon {{allDaysCollapsed ? 'is-expand' : 'is-collapse'}} schedule-group-toggle"
+        bindtap="toggleAllDayGroups"
+      ></view>
     </view>
 
     <view wx:if="{{filterPanelOpen}}" class="filter-panel">
@@ -118,7 +127,13 @@
     </view>
   </view>
 
-  <view wx:if="{{screeningCount === 0}}" class="empty-state">
+  <view wx:if="{{dataLoading}}" class="empty-state">
+    <view class="empty-copy">
+      <view class="empty-line">片单加载中</view>
+    </view>
+  </view>
+
+  <view wx:elif="{{screeningCount === 0}}" class="empty-state">
     <view wx:if="{{emptyShowActions}}" class="empty-start">
       <view class="empty-paragraph">
         <view class="empty-sentence">
@@ -142,7 +157,7 @@
     </view>
   </view>
 
-  <view class="screening-days">
+  <view wx:if="{{!dataLoading}}" class="screening-days">
     <view wx:for="{{screeningGroups}}" wx:for-item="group" wx:key="date" class="screening-day">
       <view wx:if="{{showDayHeaders}}" class="screening-day-head" data-day="{{group.date}}" bindtap="toggleDayGroup">
         <view class="screening-day-left">
@@ -178,6 +193,7 @@
                   <text class="screen-meta">{{item.cardMeta || item.screenMeta}}</text>
                 </view>
                 <view wx:if="{{fieldConfig.rating && item.ratingSummary}}" class="rating-line">{{item.ratingSummary}}</view>
+                <view wx:if="{{fieldConfig.synopsis && item.synopsis}}" class="screen-synopsis">{{item.synopsis}}</view>
                 <view class="venue-line">{{item.cinema}} · {{item.hall}}</view>
                 <view class="tag-line">
                   <view class="interest tone-{{item.interestTone}}">
@@ -206,9 +222,9 @@
                     <view class="glyph-line is-b"></view>
                   </view>
                 </view>
-                <text class="pick-label">{{item.selected ? '已排' : item.filmScheduled ? '换到这场' : item.pickConflict ? '仍选' : '加入'}}</text>
+                <text class="pick-label">{{item.selected ? '已排' : '加入'}}</text>
               </view>
-              <text wx:if="{{item.filmScheduled && !item.selected}}" class="action-note">已在排片中</text>
+              <text wx:if="{{item.filmScheduled && !item.selected}}" class="action-note">已排过这部</text>
             </view>
           </view>
         </view>
@@ -217,4 +233,5 @@
   </view>
 
   <smart-plan id="smartPlan"></smart-plan>
+  <view wx:if="{{showScrollTop}}" class="scroll-top-button" bindtap="scrollToTop"></view>
 </view>

@@ -14,7 +14,13 @@
         <text wx:for="{{film.detailTags}}" wx:key="*this" class="detail-tag">{{item}}</text>
       </view>
       <view wx:if="{{film.ratingItems.length}}" class="rating-strip">
-        <view wx:for="{{film.ratingItems}}" wx:key="key" class="rating-item rating-{{item.key}}">
+        <view
+          wx:for="{{film.ratingItems}}"
+          wx:key="key"
+          class="rating-item rating-{{item.key}}"
+          data-url="{{item.href}}"
+          bindtap="copyRatingLink"
+        >
           <text class="rating-label">{{item.label}}</text>
           <text class="rating-value">{{item.value}}</text>
           <text wx:if="{{item.extra}}" class="rating-extra">{{item.extra}}</text>
@@ -81,6 +87,7 @@
         <view class="ticket-row">
           <text wx:if="{{item.ticketPlan}}">{{item.ticketPlan}}</text>
           <text wx:if="{{item.price}}" class="price">¥{{item.price}}</text>
+          <text wx:if="{{item.specialTag}}" class="special-tag">{{item.specialTag}}</text>
           <text wx:if="{{item.popularityText}}" class="popularity">{{item.popularityText}}</text>
         </view>
         <view wx:if="{{item.conflict}}" class="conflict">冲突：{{item.conflictText}}</view>

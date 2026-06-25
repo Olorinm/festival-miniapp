@@ -1,6 +1,8 @@
 function getNavMetrics() {
   try {
-    const system = wx.getSystemInfoSync()
+    const system = wx.getWindowInfo
+      ? wx.getWindowInfo()
+      : (wx.getSystemInfoSync ? wx.getSystemInfoSync() : {})
     const menu = wx.getMenuButtonBoundingClientRect()
     const navTop = menu.top || system.statusBarHeight || 0
     const navHeight = menu.height || 44

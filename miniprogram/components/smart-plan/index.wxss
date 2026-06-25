@@ -59,7 +59,7 @@
 
 .smart-mask {
   position: fixed;
-  z-index: 20;
+  z-index: 80;
   left: 0;
   right: 0;
   top: 0;

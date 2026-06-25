@@ -46,6 +46,8 @@ const POSTER_WIDTH = 750
 const POSTER_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif'
 const APP_SHARE_NAME = '赶场愉快'
 const GITHUB_URL = 'https://github.com/Olorinm/festival-miniapp'
+const MINIAPP_QR_SRC = '/miniapp/qr.png'
+const MINIAPP_ANNOUNCEMENT_STORAGE_KEY = `${STORAGE_PREFIX}miniappAnnouncement.20260624.dismissed`
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const POPULARITY_RANK_REFRESH_MS = 5 * 60 * 1000
 const POPULARITY_RANK_INITIAL_LIMIT = 20
@@ -69,14 +71,14 @@ const POSTER_THEMES = [
   {
     key: 'minimal',
     label: '极简',
-    swatch: '#fdfdfb',
+    swatch: '#fffefd',
     layout: 'minimal',
-    bg: '#fdfdfb',
+    bg: '#fffefd',
     ink: '#1f201e',
     muted: '#71736f',
     subtle: '#989a96',
-    faint: '#e8e8e6',
-    ghost: '#f1f1ef',
+    faint: '#eeeeeb',
+    ghost: '#f8f8f6',
     conflict: '#9a4d45'
   },
   {
@@ -536,17 +538,12 @@ function formatPlanText(plan, options) {
     lines.push(day.dayLabel)
     day.items.forEach(item => {
       const note = notes[item.id]
-      lines.push(`${item.timeRange}｜${item.cnTitle}${item.conflict ? ' [冲突]' : ''}`)
+      lines.push(`${item.timeRange}｜${item.cnTitle}`)
       lines.push(formatVenueLine(item))
       if (note) lines.push(`备注：${note}`)
       lines.push('')
     })
   })
-  if (plan.conflictPairs.length) {
-    lines.push('待处理冲突')
-    plan.conflictPairs.forEach(pair => lines.push(pair.label))
-    lines.push('')
-  }
   lines.push(`导入码：${plan.selected.map(item => item.id).join(',')}`)
   lines.push('用「赶场愉快」导入：复制全文或底部导入码。')
   return lines.join('\n')
@@ -1135,7 +1132,7 @@ function paintPlanPoster(ctx, poster) {
       } else if (layout === 'noir') {
         fillRoundRect(ctx, block.x - 18, block.y - 18, block.panelWidth || block.mainWidth + 176, block.height + 18, 18, colors.panel)
         const textX = block.posterWidth ? block.mainX : block.mainX - 18
-        ctx.strokeStyle = block.conflict ? colors.conflict : colors.faint
+        ctx.strokeStyle = colors.faint
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(block.timeX + 92, block.y + 2)
@@ -1597,6 +1594,7 @@ function FilmPage({
 function TagLine({ screening, fieldConfig, popularity }) {
   const interest = screening.interest || {}
   const interestWord = interest.label ? interest.label.replace(/★+/g, '') : '未标星'
+  const specialTag = screening.specialTag || (screening.addedSchedule ? '加场' : '')
   return (
     <div className="tag-line">
       <span className={`interest tone-${interest.tone || 'gray'}`}>
@@ -1605,6 +1603,7 @@ function TagLine({ screening, fieldConfig, popularity }) {
       </span>
       {screening.price ? <span className="price">¥{screening.price}</span> : null}
       {fieldConfig.ticket !== false && screening.ticket ? <span className="ticket">{screening.ticket}</span> : null}
+      {specialTag ? <span className="special-tag">{specialTag}</span> : null}
       {fieldConfig.popularity !== false && popularity > 0 ? <span className="popularity">{popularity}人已排</span> : null}
     </div>
   )
@@ -2419,9 +2418,15 @@ function PosterSheet({ open, theme, setTheme, includePosters, setIncludePosters,
 }
 
 const TICKET_TYPES = [
-  { key: 'seek', label: '求票', hint: '我想要这场票' },
-  { key: 'offer', label: '出票', hint: '我有富余票转出' },
-  { key: 'swap', label: '换票', hint: '我的票换你的票' }
+  { key: 'seek', label: '求票' },
+  { key: 'offer', label: '出票' },
+  { key: 'swap', label: '换票' }
+]
+const TICKET_THEMES = [
+  { key: 'classic', label: '经典', swatch: '#17191c' },
+  { key: 'paper', label: '票根', swatch: '#f2f3f1' },
+  { key: 'silver', label: '冷白', swatch: '#eef2f5' },
+  { key: 'noir', label: '夜场', swatch: '#111b2a' }
 ]
 
 function ticketScreeningBrief(item) {
@@ -2429,6 +2434,13 @@ function ticketScreeningBrief(item) {
   const time = item.start || ''
   const venue = compact([item.cinema, item.hall])
   return compact([`${day} ${time}`.trim(), venue])
+}
+
+function ticketDefaultPrice(item) {
+  const value = item && item.price != null && String(item.price).trim() !== '' ? String(item.price).trim() : ''
+  if (!value) return ''
+  if (/^[¥￥]/.test(value)) return value.replace(/^￥/, '¥')
+  return `¥${value}`
 }
 
 // 票务图导出表单（合并版：类型 → 场次 → 联系方式）
@@ -2444,6 +2456,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
   const [contactMode, setContactMode] = useState('text')
   const [contactValue, setContactValue] = useState('')
   const [qrSrc, setQrSrc] = useState('')
+  const [ticketTheme, setTicketTheme] = useState('classic')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -2458,6 +2471,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
     setContactMode('text')
     setContactValue('')
     setQrSrc('')
+    setTicketTheme('classic')
     setBusy(false)
   }, [open])
 
@@ -2478,7 +2492,8 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
   const screeningById = id => (allScreenings || []).find(s => s.id === id) || null
 
   const addPick = (setStore, id) => {
-    setStore(prev => (prev[id] ? prev : { ...prev, [id]: { price: '', seat: '' } }))
+    const item = screeningById(id)
+    setStore(prev => (prev[id] ? prev : { ...prev, [id]: { price: ticketDefaultPrice(item), seat: '' } }))
   }
   const removePick = (setStore, id) => {
     setStore(prev => {
@@ -2525,6 +2540,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
     if (type === 'swap') {
       spec = {
         type,
+        theme: ticketTheme,
         give: Object.entries(givePicked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
         want: Object.entries(wantPicked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
         contact
@@ -2532,6 +2548,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
     } else {
       spec = {
         type,
+        theme: ticketTheme,
         screenings: Object.entries(picked).map(([id, f]) => buildScreeningSpec(id, f)).filter(Boolean),
         contact
       }
@@ -2628,7 +2645,6 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
             {TICKET_TYPES.map(t => (
               <button key={t.key} className={`ticket-type is-${t.key} ${type === t.key ? 'is-on' : ''}`} type="button" onClick={() => setType(t.key)}>
                 <span className="ticket-type-nm">{t.label}</span>
-                <span className="ticket-type-hint">{t.hint}</span>
               </button>
             ))}
           </div>
@@ -2667,6 +2683,16 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
               <input className="ticket-input" value={contactValue} placeholder="二维码旁的说明（可选，如 加我约票）" onChange={e => setContactValue(e.target.value)} />
             </>
           )}
+
+          <div className="poster-field-title">颜色</div>
+          <div className="poster-theme-row ticket-theme-row">
+            {TICKET_THEMES.map(item => (
+              <button className={`poster-theme ${ticketTheme === item.key ? 'is-picked' : ''}`} type="button" key={item.key} onClick={() => setTicketTheme(item.key)}>
+                <span className="poster-theme-swatch" style={{ background: item.swatch }} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="poster-actions">
@@ -2681,7 +2707,7 @@ function TicketPosterSheet({ open, allScreenings, selectedIds, posterSrcByFilmId
   )
 }
 
-function ImagePreview({ image, title = '图片预览', hint = '长按图片保存', onClose }) {
+function ImagePreview({ image, title = '图片预览', hint = '长按图片保存', onClose, onDownload }) {
   if (!image) return null
   return (
     <div className="poster-preview-mask" onClick={onClose}>
@@ -2696,6 +2722,11 @@ function ImagePreview({ image, title = '图片预览', hint = '长按图片保�
         <div className="poster-preview-scroll">
           <img className="poster-preview-image" src={image.url} alt={image.alt || title} />
         </div>
+        {onDownload ? (
+          <div className="poster-preview-actions">
+            <button className="poster-preview-download" type="button" onClick={() => onDownload(image)}>下载图片</button>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -2752,6 +2783,7 @@ function DetailRatingItem({ film, item }) {
 }
 
 function DetailScreeningCard({ item, selected, conflict, conflictText, popularity, onToggle }) {
+  const specialTag = item.specialTag || (item.addedSchedule ? '加场' : '')
   return (
     <div className={`detail-screening-card ${selected ? 'is-selected' : ''} ${conflict ? 'has-conflict' : ''}`}>
       {item.isMock ? <div className="mock-stamp">{item.mockLabel || '测试场次'}</div> : null}
@@ -2764,6 +2796,7 @@ function DetailScreeningCard({ item, selected, conflict, conflictText, popularit
         <div className="ticket-row">
           {item.ticketPlan ? <span className="ticket">{item.ticketPlan}</span> : null}
           {item.price ? <span className="price">¥{item.price}</span> : null}
+          {specialTag ? <span className="special-tag">{specialTag}</span> : null}
           {popularity ? <span className="popularity">{popularity}人已排</span> : null}
         </div>
         {conflict ? <div className="detail-conflict">冲突：{conflictText}</div> : null}
@@ -3046,6 +3079,29 @@ function PlanNoteDialog({ open, title, value, onValue, onClose, onConfirm }) {
   )
 }
 
+function MiniAppAnnouncementDialog({ open, onClose, onExportText }) {
+  if (!open) return null
+
+  return (
+    <div className="wechat-modal-mask miniapp-announcement-mask" onClick={onClose}>
+      <div className="miniapp-announcement" onClick={event => event.stopPropagation()}>
+        <button className="miniapp-announcement-close" type="button" onClick={onClose} aria-label="关闭">×</button>
+        <div className="miniapp-announcement-title">微信小程序已正式上线</div>
+        <div className="miniapp-announcement-copy">
+          可以直接在微信搜索「赶场愉快」，或者扫描二维码访问。网页端也可以用「导出文字版」同步片单到小程序。
+        </div>
+        <div className="miniapp-announcement-qr-wrap">
+          <img className="miniapp-announcement-qr" src={MINIAPP_QR_SRC} alt="赶场愉快微信小程序二维码" />
+        </div>
+        <div className="miniapp-announcement-actions">
+          <button className="miniapp-announcement-secondary" type="button" onClick={onClose}>知道了</button>
+          <button className="miniapp-announcement-primary" type="button" onClick={onExportText}>导出文字版</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Toast({ message }) {
   if (!message) return null
   return <div className="toast">{message}</div>
@@ -3093,6 +3149,7 @@ export default function FestivalWebApp() {
   const [planNoteDraft, setPlanNoteDraft] = useState('')
   const [toast, setToast] = useState('')
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [miniappAnnouncementOpen, setMiniappAnnouncementOpen] = useState(false)
   const toastTimerRef = useRef(null)
   const scrollPositionsRef = useRef({ films: 0, schedule: 0, plan: 0, popularity: 0 })
   const popularitySyncSignatureRef = useRef('')
@@ -3211,6 +3268,17 @@ export default function FestivalWebApp() {
   }, [activeSchemeId, normalizedSchemes, setActiveSchemeId])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (window.localStorage.getItem(MINIAPP_ANNOUNCEMENT_STORAGE_KEY) === '1') return
+    } catch (error) {}
+    const timer = window.setTimeout(() => {
+      setMiniappAnnouncementOpen(true)
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
     setPopularityRankLimit(POPULARITY_RANK_INITIAL_LIMIT)
   }, [allScreeningIdsSignature, festivalId])
 
@@ -3219,7 +3287,7 @@ export default function FestivalWebApp() {
   }, [])
 
   useEffect(() => {
-    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog || planNoteDialog)
+    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || ticketSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog || planNoteDialog || miniappAnnouncementOpen)
     if (!hasBlockingOverlay || typeof document === 'undefined') return
     const body = document.body
     const scrollY = window.scrollY || 0
@@ -3241,7 +3309,7 @@ export default function FestivalWebApp() {
       body.style.width = previousWidth
       window.scrollTo(0, scrollY)
     }
-  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog, planNoteDialog])
+  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, ticketSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog, planNoteDialog, miniappAnnouncementOpen])
 
   useEffect(() => {
     setMarks(prev => applyFilmMarkAliases(films, prev))
@@ -3532,6 +3600,14 @@ export default function FestivalWebApp() {
     setImportMode('import')
   }
 
+  const closeMiniappAnnouncement = () => {
+    setMiniappAnnouncementOpen(false)
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(MINIAPP_ANNOUNCEMENT_STORAGE_KEY, '1')
+    } catch (error) {}
+  }
+
   const openCommunityQr = () => {
     trackUsageEvent('community_open', festivalId)
     setImagePreview({ url: '/community/wechat-feedback-group.jpg', alt: '赶场愉快反馈群二维码' })
@@ -3574,6 +3650,16 @@ export default function FestivalWebApp() {
     }
   }
 
+  const openMiniappExportText = async () => {
+    closeMiniappAnnouncement()
+    if (!plan.selected.length) {
+      switchTab('plan')
+      showToast('先加入场次')
+      return
+    }
+    await openTextExport()
+  }
+
   const openPosterExport = () => {
     trackUsageEvent('export_poster', festivalId)
     setExportSheetOpen(false)
@@ -3598,6 +3684,25 @@ export default function FestivalWebApp() {
       showToast('票务图已生成')
     } else {
       showToast('生成失败')
+    }
+  }
+
+  const downloadPreviewImage = image => {
+    if (!image || !image.url) {
+      showToast('请长按图片保存')
+      return
+    }
+    try {
+      const link = document.createElement('a')
+      link.href = image.url
+      link.download = image.filename || 'festival-poster.png'
+      link.rel = 'noopener'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      showToast('已触发下载，没有弹出时请长按图片保存', 2200)
+    } catch (error) {
+      showToast('没有弹出下载时，可以长按图片保存', 2200)
     }
   }
 
@@ -3757,6 +3862,11 @@ export default function FestivalWebApp() {
           <ArrowUpToLine aria-hidden="true" />
         </button>
       ) : null}
+      <MiniAppAnnouncementDialog
+        open={miniappAnnouncementOpen}
+        onClose={closeMiniappAnnouncement}
+        onExportText={openMiniappExportText}
+      />
       <SmartPlanModal open={smartOpen} onClose={() => !smartLoading && setSmartOpen(false)} onSubmit={runSmartPlan} loading={smartLoading} progress={smartProgress} error={smartError} />
       <ExportActionSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} onPoster={openPosterExport} onText={openTextExport} onTicket={openTicketExport} />
       <TicketPosterSheet
@@ -3785,8 +3895,9 @@ export default function FestivalWebApp() {
       <ImagePreview
         image={posterPreview}
         title="长图已生成"
-        hint="长按图片保存"
+        hint="长按图片保存，或点击下载图片"
         onClose={() => setPosterPreview(null)}
+        onDownload={downloadPreviewImage}
       />
       <ImagePreview image={imagePreview} title="交流群" hint="长按二维码识别加入" onClose={() => setImagePreview(null)} />
       <ImportDialog mode={importMode} text={importText} onText={setImportText} onClose={() => setImportMode('')} onImport={importPlan} onCopy={copyExport} />

@@ -3,14 +3,23 @@ const { Redis } = require('@upstash/redis')
 const memory = globalThis.__festivalPopularityMemory || {
   users: new Map(),
   screeningUsers: new Map(),
-  filmUsers: new Map()
+  filmUsers: new Map(),
+  wechatCache: new Map(),
+  wechatSyncMeta: new Map()
 }
 globalThis.__festivalPopularityMemory = memory
+memory.wechatCache = memory.wechatCache || new Map()
+memory.wechatSyncMeta = memory.wechatSyncMeta || new Map()
 
 let redisClient = null
 let redisDisabledUntil = 0
+let wechatAccessToken = null
+let wechatAccessTokenExpiresAt = 0
 const MAX_SELECTION_IDS = 120
 const MAX_QUERY_IDS = 2000
+const WECHAT_CACHE_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.WECHAT_POPULARITY_CACHE_TTL_MS) || 60 * 60 * 1000)
+const WECHAT_SYNC_INTERVAL_MS = Math.max(5 * 60 * 1000, Number(process.env.WECHAT_POPULARITY_SYNC_INTERVAL_MS) || 60 * 60 * 1000)
+const WECHAT_CACHE_EXPIRE_SECONDS = Math.ceil((WECHAT_CACHE_TTL_MS * 3) / 1000)
 
 function disableRedisTemporarily(error) {
   redisDisabledUntil = Date.now() + 10 * 60 * 1000
@@ -65,6 +74,99 @@ function getRedis(options) {
   return redisClient
 }
 
+function wechatCloudConfig() {
+  return {
+    env: process.env.WECHAT_CLOUD_ENV_ID || process.env.TCB_ENV_ID || 'cloud1-d7gzforb6cdf2aa48',
+    appId: process.env.WECHAT_APP_ID || process.env.WECHAT_MINIPROGRAM_APP_ID || 'wx6a7f5936120dd265',
+    appSecret: process.env.WECHAT_APP_SECRET || process.env.WECHAT_MINIPROGRAM_APP_SECRET,
+    functionName: process.env.WECHAT_POPULARITY_FUNCTION || 'screeningPopularity',
+    syncToken: process.env.WECHAT_POPULARITY_SYNC_TOKEN || process.env.POPULARITY_WECHAT_SYNC_TOKEN || process.env.WEB_POPULARITY_SYNC_TOKEN
+  }
+}
+
+function hasWechatCloudConfig() {
+  const config = wechatCloudConfig()
+  return !!(config.env && config.appId && config.appSecret)
+}
+
+async function getWechatAccessToken() {
+  const config = wechatCloudConfig()
+  if (!config.appId || !config.appSecret) {
+    throw new Error('wechat app credentials not configured')
+  }
+  if (wechatAccessToken && Date.now() < wechatAccessTokenExpiresAt) {
+    return wechatAccessToken
+  }
+  const url = new URL('https://api.weixin.qq.com/cgi-bin/token')
+  url.searchParams.set('grant_type', 'client_credential')
+  url.searchParams.set('appid', config.appId)
+  url.searchParams.set('secret', config.appSecret)
+  const response = await fetch(url)
+  const result = await response.json()
+  if (!response.ok || !result.access_token) {
+    throw new Error(result && result.errmsg || 'wechat access token failed')
+  }
+  wechatAccessToken = result.access_token
+  wechatAccessTokenExpiresAt = Date.now() + Math.max(60, Number(result.expires_in) - 300) * 1000
+  return wechatAccessToken
+}
+
+async function callWechatPopularity(data) {
+  const config = wechatCloudConfig()
+  const accessToken = await getWechatAccessToken()
+  const url = new URL('https://api.weixin.qq.com/tcb/invokecloudfunction')
+  url.searchParams.set('access_token', accessToken)
+  url.searchParams.set('env', config.env)
+  url.searchParams.set('name', config.functionName)
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data || {})
+  })
+  const payload = await response.json()
+  if (!response.ok || Number(payload.errcode) !== 0) {
+    throw new Error(payload && payload.errmsg || 'wechat cloud function failed')
+  }
+  let result = payload.resp_data
+  if (typeof result === 'string') {
+    try {
+      result = JSON.parse(result)
+    } catch (error) {}
+  }
+  if (!result || result.ok === false) {
+    throw new Error(result && result.error || 'wechat popularity failed')
+  }
+  return result
+}
+
+function normalizeCountMap(counts, limit, options) {
+  const source = counts && typeof counts === 'object' ? counts : {}
+  const result = {}
+  const keepZero = !!(options && options.keepZero)
+  Object.keys(source).slice(0, limit || MAX_QUERY_IDS).forEach(id => {
+    const key = String(id || '').trim()
+    const value = Math.max(0, Math.floor(Number(source[id]) || 0))
+    if (key && (keepZero || value > 0)) {
+      result[key] = value
+    }
+  })
+  return result
+}
+
+function filterCounts(counts, ids) {
+  const source = counts && typeof counts === 'object' ? counts : {}
+  return uniqueIds(ids, MAX_QUERY_IDS).reduce((map, id) => {
+    map[id] = Math.max(0, Math.floor(Number(source[id]) || 0))
+    return map
+  }, {})
+}
+
+function countMapTotal(counts) {
+  return Object.keys(counts || {}).reduce((sum, id) => {
+    return sum + Math.max(0, Math.floor(Number(counts[id]) || 0))
+  }, 0)
+}
+
 function screeningKey(festivalId, screeningId) {
   return `festival:${festivalId}:screening:${screeningId}:users`
 }
@@ -83,6 +185,14 @@ function filmCountKey(festivalId) {
 
 function userKey(festivalId, anonUserId) {
   return `festival:${festivalId}:user:${anonUserId}:selection`
+}
+
+function wechatCacheKey(festivalId) {
+  return `festival:${festivalId}:wechatPopularityCache`
+}
+
+function wechatSyncMetaKey(festivalId) {
+  return `festival:${festivalId}:wechatPopularitySyncMeta`
 }
 
 function setAdd(map, key, value) {
@@ -296,6 +406,184 @@ async function redisGet(payload) {
   return { screeningCounts, filmCounts, stored: 'redis' }
 }
 
+async function readWechatCache(festivalId) {
+  const normalizedFestivalId = normalizeFestivalId(festivalId)
+  const redis = getRedis({ ignoreDisabled: true })
+  if (redis) {
+    try {
+      const cached = await redis.get(wechatCacheKey(normalizedFestivalId))
+      if (cached && typeof cached === 'object') {
+        return cached
+      }
+    } catch (error) {}
+  }
+  return memory.wechatCache.get(normalizedFestivalId) || null
+}
+
+async function writeWechatCache(festivalId, counts, meta) {
+  const normalizedFestivalId = normalizeFestivalId(festivalId)
+  const previous = await readWechatCache(normalizedFestivalId)
+  const mergedCounts = Object.assign(
+    {},
+    previous && previous.screeningCounts || {},
+    normalizeCountMap(counts, MAX_QUERY_IDS, { keepZero: true })
+  )
+  const payload = {
+    screeningCounts: mergedCounts,
+    updatedAt: Date.now(),
+    source: meta && meta.source || 'wechat',
+    syncedAt: meta && meta.syncedAt || null
+  }
+  memory.wechatCache.set(normalizedFestivalId, payload)
+  const redis = getRedis({ ignoreDisabled: true })
+  if (redis) {
+    try {
+      await redis.set(wechatCacheKey(normalizedFestivalId), payload, { ex: WECHAT_CACHE_EXPIRE_SECONDS })
+    } catch (error) {}
+  }
+  return payload
+}
+
+async function readWechatSyncMeta(festivalId) {
+  const normalizedFestivalId = normalizeFestivalId(festivalId)
+  const redis = getRedis({ ignoreDisabled: true })
+  if (redis) {
+    try {
+      const meta = await redis.get(wechatSyncMetaKey(normalizedFestivalId))
+      if (meta && typeof meta === 'object') {
+        return meta
+      }
+    } catch (error) {}
+  }
+  return memory.wechatSyncMeta.get(normalizedFestivalId) || null
+}
+
+async function writeWechatSyncMeta(festivalId, meta) {
+  const normalizedFestivalId = normalizeFestivalId(festivalId)
+  const payload = Object.assign({}, meta || {}, { updatedAt: Date.now() })
+  memory.wechatSyncMeta.set(normalizedFestivalId, payload)
+  const redis = getRedis({ ignoreDisabled: true })
+  if (redis) {
+    try {
+      await redis.set(wechatSyncMetaKey(normalizedFestivalId), payload, { ex: WECHAT_CACHE_EXPIRE_SECONDS })
+    } catch (error) {}
+  }
+  return payload
+}
+
+async function getWechatPopularity(payload, options) {
+  if (!hasWechatCloudConfig()) {
+    return null
+  }
+  const festivalId = normalizeFestivalId(payload && payload.festivalId)
+  const screeningIds = uniqueIds(payload && payload.screeningIds, MAX_QUERY_IDS)
+  const force = !!(options && options.force)
+  if (!screeningIds.length) {
+    return { screeningCounts: {}, filmCounts: {}, stored: 'wechat-cache' }
+  }
+  const cached = await readWechatCache(festivalId)
+  const cachedAt = Number(cached && cached.updatedAt) || 0
+  if (!force && cached && cached.screeningCounts && Date.now() - cachedAt < WECHAT_CACHE_TTL_MS) {
+    return {
+      screeningCounts: filterCounts(cached.screeningCounts, screeningIds),
+      filmCounts: {},
+      stored: 'wechat-cache',
+      source: cached.source || 'wechat-cache',
+      cachedAt
+    }
+  }
+
+  const counts = {}
+  for (let index = 0; index < screeningIds.length; index += 500) {
+    const idsChunk = screeningIds.slice(index, index + 500)
+    const result = await callWechatPopularity({
+      action: 'get',
+      festivalId,
+      screeningIds: idsChunk
+    })
+    Object.assign(counts, result.counts || result.screeningCounts || {})
+  }
+  await writeWechatCache(festivalId, counts, { source: 'wechat' })
+  return {
+    screeningCounts: filterCounts(counts, screeningIds),
+    filmCounts: {},
+    stored: 'wechat',
+    source: 'wechat'
+  }
+}
+
+async function syncWebSnapshotToWechat(options) {
+  const festivalId = normalizeFestivalId(options && options.festivalId)
+  const screeningIds = uniqueIds(options && options.screeningIds, MAX_QUERY_IDS)
+  const force = !!(options && options.force)
+  const config = wechatCloudConfig()
+  if (!hasWechatCloudConfig()) {
+    return { ok: false, skipped: true, reason: 'wechat_cloud_not_configured' }
+  }
+  if (!config.syncToken) {
+    return { ok: false, skipped: true, reason: 'wechat_sync_token_not_configured' }
+  }
+  if (!screeningIds.length) {
+    return { ok: false, skipped: true, reason: 'empty_screening_ids' }
+  }
+  const previousMeta = await readWechatSyncMeta(festivalId)
+  if (!force && previousMeta && previousMeta.syncedAt && Date.now() - Number(previousMeta.syncedAt) < WECHAT_SYNC_INTERVAL_MS) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'fresh',
+      syncedAt: previousMeta.syncedAt,
+      totalWeight: previousMeta.totalWeight || 0,
+      screeningCount: previousMeta.screeningCount || 0
+    }
+  }
+
+  const redisCounts = await redisGet({
+    festivalId,
+    screeningIds
+  })
+  const counts = normalizeCountMap(redisCounts.screeningCounts, MAX_QUERY_IDS)
+  const totalWeight = countMapTotal(counts)
+  if (!totalWeight) {
+    await writeWechatSyncMeta(festivalId, {
+      ok: false,
+      skipped: true,
+      reason: 'empty_redis_counts',
+      syncedAt: Date.now(),
+      totalWeight: 0,
+      screeningCount: 0
+    })
+    return { ok: false, skipped: true, reason: 'empty_redis_counts' }
+  }
+
+  await callWechatPopularity({
+    action: 'writeWebSnapshot',
+    festivalId,
+    webSyncToken: config.syncToken,
+    source: 'web_redis',
+    snapshotFetchedAt: new Date().toISOString(),
+    counts,
+    queryScreeningIds: screeningIds.slice(0, 500)
+  })
+  const syncedAt = Date.now()
+  await writeWechatSyncMeta(festivalId, {
+    ok: true,
+    syncedAt,
+    totalWeight,
+    screeningCount: Object.keys(counts).length
+  })
+
+  await getWechatPopularity({ festivalId, screeningIds }, { force: true })
+
+  return {
+    ok: true,
+    action: 'syncWebSnapshotToWechat',
+    syncedAt,
+    totalWeight,
+    screeningCount: Object.keys(counts).length
+  }
+}
+
 async function syncPopularity(payload) {
   const anonUserId = String(payload && payload.anonUserId || '').trim()
   if (!anonUserId) {
@@ -304,11 +592,18 @@ async function syncPopularity(payload) {
   return redisSync(payload || {})
 }
 
-async function getPopularity(payload) {
+async function getPopularity(payload, options) {
+  try {
+    const wechatResult = await getWechatPopularity(payload || {}, options || {})
+    if (wechatResult) {
+      return wechatResult
+    }
+  } catch (error) {}
   return redisGet(payload || {})
 }
 
 module.exports = {
   getPopularity,
+  syncWebSnapshotToWechat,
   syncPopularity
 }

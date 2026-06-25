@@ -27,6 +27,8 @@ node_modules/
 *.key
 *.pem
 *.p12
+.secrets/
+cloudfunctions/*/private-config.js
 
 # WeChat DevTools local/private config
 project.private.config.json
@@ -34,25 +36,34 @@ project.local.config.json
 
 # Local-only tooling
 .claude/
-scripts/
+scripts/*
+!scripts/check-sync.mjs
+!scripts/sync-data-bundles.mjs
+!scripts/sync-shared.mjs
+
+# Real festival/user datasets and generated data bundles
+cloud-data/
+miniprogram/data/festival.js
+miniprogram/utils/commute-routes.js
+web/lib/festival.js
+web/lib/commute-routes.cjs
+cloudfunctions/getFestivalData/festival-data.json
+cloudfunctions/getFestivalData/festival-data.json.gz
+cloudfunctions/screeningPopularity/*popularity*payload*.json
+*新增场次*.md
 
 # Local pipeline outputs / intermediate artifacts / reports
 outputs/
 
-# Local data caches and raw downloaded assets
-cloud-data/douban/
-cloud-data/douban*/
-cloud-data/tmdb/
-cloud-data/tmdb*/
-cloud-data/**/doulist-items-cache.json
-cloud-data/**/siff2026-synopsis-cache.json
-cloud-data/**/films-with-posters.json
-cloud-data/**/download-report.json
-cloud-data/**/covers/
-
 # Generated offline assets
 miniprogram/assets/posters/
+web/public/posters/
 article/
+
+# Local spreadsheet/source data drops
+*.xlsx
+*.xls
+*.csv
 
 # Local review / scratch artifacts
 web-review-screenshots/

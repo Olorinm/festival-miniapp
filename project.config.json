@@ -3,7 +3,7 @@
   "miniprogramRoot": "miniprogram/",
   "cloudfunctionRoot": "cloudfunctions/",
   "compileType": "miniprogram",
-  "appid": "touristappid",
+  "appid": "wx6a7f5936120dd265",
   "projectname": "festival-miniapp",
   "setting": {
     "urlCheck": false,
@@ -13,7 +13,7 @@
     "minified": false,
     "compileWorklet": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "packNpmManually": false,
     "packNpmRelationList": [],
     "minifyWXSS": true,
@@ -40,6 +40,22 @@
       {
         "type": "folder",
         "value": "miniprogram/assets/posters"
+      },
+      {
+        "type": "file",
+        "value": "data/festival.js"
+      },
+      {
+        "type": "file",
+        "value": "miniprogram/data/festival.js"
+      },
+      {
+        "type": "file",
+        "value": "utils/commute-routes.js"
+      },
+      {
+        "type": "file",
+        "value": "miniprogram/utils/commute-routes.js"
       }
     ],
     "include": []

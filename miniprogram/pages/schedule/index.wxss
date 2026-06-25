@@ -1,5 +1,5 @@
 .schedule-page {
-  padding: 16rpx 24rpx 72rpx 24rpx;
+  padding: 16rpx 24rpx calc(188rpx + env(safe-area-inset-bottom)) 24rpx;
   background: #ffffff;
 }
 
@@ -153,6 +153,10 @@
   align-items: center;
   gap: 12rpx;
   margin-top: 20rpx;
+}
+
+.schedule-group-toggle {
+  margin-left: auto;
 }
 
 .scope-segment {
@@ -715,11 +719,22 @@
 }
 
 .rating-line {
-  margin-top: 6rpx;
+  margin-top: 8rpx;
   color: #8f6b1c;
   font-size: 20rpx;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.screen-synopsis {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 8rpx;
+  color: #737a73;
+  font-size: 21rpx;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .screen-meta {

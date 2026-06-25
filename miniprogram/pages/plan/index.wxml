@@ -4,9 +4,12 @@
       <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
       <text>关于</text>
     </navigator>
-    <view class="app-nav-title is-with-context">
-      <text class="app-nav-main">排片表</text>
-      <text class="app-nav-context">{{festivalName}}</text>
+    <view class="app-nav-title is-festival-title">
+      <view class="app-nav-edition">
+        <text class="app-nav-number">28</text>
+        <text class="app-nav-suffix">th</text>
+      </view>
+      <text class="app-nav-word">SIFF</text>
     </view>
   </view>
 </view>
@@ -52,6 +55,14 @@
     <view class="current-plan-bar">
       <view class="current-plan-lead">
         <text class="current-plan-summary">{{currentSchemeSummary}}</text>
+        <view
+          wx:if="{{plan.conflictPairs.length}}"
+          class="conflict-toggle {{conflictsExpanded ? 'is-open' : ''}}"
+          bindtap="toggleConflicts"
+        >
+          <text class="conflict-alert-icon">!</text>
+          <text>{{plan.conflictPairs.length}}组冲突</text>
+        </view>
       </view>
       <view class="current-plan-actions">
         <view class="plan-tool-button" bindtap="deletePlanScheme" hover-class="action-tap">
@@ -62,7 +73,7 @@
           <view class="plan-action-icon is-import"></view>
           <text>导入</text>
         </view>
-        <view class="plan-tool-button {{empty ? 'is-disabled' : ''}}" bindtap="exportPlan" hover-class="action-tap">
+        <view class="plan-tool-button {{empty || dataLoading ? 'is-disabled' : ''}}" bindtap="exportPlan" hover-class="action-tap">
           <view class="plan-action-icon is-export"></view>
           <text>导出</text>
         </view>
@@ -70,65 +81,83 @@
     </view>
   </view>
 
-  <view wx:if="{{empty}}" class="empty">
-    <view class="empty-title">暂无排片</view>
+  <view wx:if="{{dataLoading || empty}}" class="empty">
+    <view class="empty-title">{{emptyTitle}}</view>
   </view>
 
-  <view wx:if="{{!empty && smartPlanMeta && smartPlanMeta.instruction}}" class="smart-summary">
+  <view wx:if="{{!dataLoading && !empty && smartPlanMeta && smartPlanMeta.instruction}}" class="smart-summary">
     <text class="smart-summary-text">{{smartPlanMeta.instruction}}</text>
   </view>
 
-  <view wx:if="{{plan.conflictPairs.length}}" class="conflict-panel">
-    <view class="panel-title">待处理冲突</view>
+  <view wx:if="{{!dataLoading && plan.conflictPairs.length && conflictsExpanded}}" class="conflict-panel">
     <view wx:for="{{plan.conflictPairs}}" wx:key="id" class="conflict-item">{{item.label}}</view>
   </view>
 
-  <view wx:if="{{!empty}}" class="day-list">
+  <view wx:if="{{!dataLoading && !empty}}" class="day-list">
     <view wx:for="{{plan.days}}" wx:key="date" class="day-section">
       <view class="day-title">{{item.dayLabel}}</view>
       <view class="plan-timeline">
-        <view wx:for="{{item.items}}" wx:for-item="screening" wx:key="id" class="plan-item {{screening.conflict ? 'has-conflict' : ''}}">
-          <view class="timeline-rail">
-            <view class="time-stamp">
-              <text class="start mono">{{screening.start}}</text>
-              <text class="end mono">{{screening.end}}</text>
-            </view>
-            <view class="timeline-node {{screening.conflict ? 'has-conflict' : ''}}">
-              <view wx:if="{{screening.conflict}}" class="conflict-cross">
-                <view class="conflict-cross-line is-a"></view>
-                <view class="conflict-cross-line is-b"></view>
-              </view>
+        <view wx:for="{{item.items}}" wx:for-item="screening" wx:key="id" class="plan-row-group">
+          <view wx:if="{{screening.transferBefore}}" class="plan-transfer is-{{screening.transferBefore.kind}}">
+            <view class="plan-transfer-time"></view>
+            <view class="commute-badge">
+              <text wx:for="{{screening.transferBefore.lines}}" wx:for-item="line" wx:key="*this">{{line}}</text>
             </view>
           </view>
 
-          <view class="plan-card {{screening.conflict ? 'has-conflict' : ''}}">
-            <view wx:if="{{screening.isMock}}" class="mock-stamp">{{screening.mockLabel ? screening.mockLabel : '测试场次'}}</view>
-            <navigator class="plan-main" url="/pages/film/detail?id={{screening.filmId}}">
-              <view class="plan-info">
-                <view class="screen-title">{{screening.cnTitle}}</view>
-                <view class="venue">{{screening.cinema}} · {{screening.hall}}</view>
-                <view class="ticket-row">
-                  <text wx:if="{{screening.ticketPlan}}" class="ticket">{{screening.ticketPlan}}</text>
-                  <text wx:if="{{screening.price}}" class="price">¥{{screening.price}}</text>
-                  <text wx:if="{{screening.popularityText}}" class="popularity">{{screening.popularityText}}</text>
+          <view class="plan-item {{screening.conflict ? 'has-conflict' : ''}}">
+            <view class="timeline-rail">
+              <view class="time-stamp">
+                <text class="start mono">{{screening.start}}</text>
+                <text class="end mono">{{screening.end}}</text>
+              </view>
+              <view class="timeline-node {{screening.conflict ? 'has-conflict' : ''}}">
+                <view wx:if="{{screening.conflict}}" class="conflict-cross">
+                  <view class="conflict-cross-line is-a"></view>
+                  <view class="conflict-cross-line is-b"></view>
                 </view>
               </view>
-            </navigator>
-            <view
-              class="remove"
-              data-id="{{screening.id}}"
-              hover-class="action-tap"
-              hover-start-time="0"
-              hover-stay-time="80"
-              bindtap="removeScreening"
-            >
-              <view class="remove-symbol">
-                <view class="action-glyph is-cross">
-                  <view class="glyph-line is-a"></view>
-                  <view class="glyph-line is-b"></view>
+            </view>
+
+            <view class="plan-card {{screening.conflict ? 'has-conflict' : ''}}">
+              <view wx:if="{{screening.isMock}}" class="mock-stamp">{{screening.mockLabel ? screening.mockLabel : '测试场次'}}</view>
+              <navigator class="plan-main" url="/pages/film/detail?id={{screening.filmId}}">
+                <view class="plan-info">
+                  <view class="screen-title">{{screening.cnTitle}}</view>
+                  <view class="venue">{{screening.cinema}} · {{screening.hall}}</view>
+                  <view class="ticket-row">
+                    <text wx:if="{{screening.ticketPlan}}" class="ticket">{{screening.ticketPlan}}</text>
+                    <text wx:if="{{screening.price}}" class="price">¥{{screening.price}}</text>
+                    <text wx:if="{{screening.popularityText}}" class="popularity">{{screening.popularityText}}</text>
+                  </view>
+                  <view
+                    class="plan-note-row {{screening.note ? 'has-note' : ''}}"
+                    data-id="{{screening.id}}"
+                    data-title="{{screening.cnTitle}}"
+                    data-note="{{screening.note}}"
+                    catchtap="openPlanNote"
+                  >
+                    <text class="plan-note-text">{{screening.note ? '备注：' + screening.note : '备注'}}</text>
+                    <view class="plan-note-edit-icon"></view>
+                  </view>
                 </view>
+              </navigator>
+              <view
+                class="remove"
+                data-id="{{screening.id}}"
+                hover-class="action-tap"
+                hover-start-time="0"
+                hover-stay-time="80"
+                bindtap="removeScreening"
+              >
+                <view class="remove-symbol">
+                  <view class="action-glyph is-cross">
+                    <view class="glyph-line is-a"></view>
+                    <view class="glyph-line is-b"></view>
+                  </view>
+                </view>
+                <text class="remove-label">移除</text>
               </view>
-              <text class="remove-label">移除</text>
             </view>
           </view>
         </view>
@@ -158,7 +187,7 @@
     </view>
   </view>
 
-  <view wx:if="{{posterSheetOpen}}" class="poster-mask" catchtap="closePosterSheet">
+  <view wx:if="{{posterSheetOpen}}" class="poster-mask" catchtap="closePosterSheet" catchtouchmove="noop">
     <view class="poster-sheet" catchtap="noop">
       <view class="poster-grip"></view>
       <view class="poster-sheet-title">导出长图</view>
@@ -188,9 +217,223 @@
         </view>
       </view>
 
+      <view class="poster-option" data-key="posterIncludePosters" bindtap="togglePosterOption">
+        <view>
+          <view class="poster-option-title">电影海报</view>
+          <view class="poster-option-note">默认不包含</view>
+        </view>
+        <view class="poster-check {{posterIncludePosters ? 'is-on' : ''}}">
+          <view class="poster-check-dot"></view>
+        </view>
+      </view>
+
+      <view class="poster-option" data-key="posterIncludePopularity" bindtap="togglePosterOption">
+        <view>
+          <view class="poster-option-title">热度信息</view>
+        </view>
+        <view class="poster-check {{posterIncludePopularity ? 'is-on' : ''}}">
+          <view class="poster-check-dot"></view>
+        </view>
+      </view>
+
+      <view class="poster-option" data-key="posterIncludeNotes" bindtap="togglePosterOption">
+        <view>
+          <view class="poster-option-title">备注</view>
+        </view>
+        <view class="poster-check {{posterIncludeNotes ? 'is-on' : ''}}">
+          <view class="poster-check-dot"></view>
+        </view>
+      </view>
+
       <view class="poster-actions">
         <view class="poster-secondary" bindtap="closePosterSheet">取消</view>
         <view class="poster-primary" bindtap="confirmPosterExport">生成长图</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{ticketSheetOpen}}" class="poster-mask" catchtap="closeTicketSheet" catchtouchmove="noop">
+    <view class="poster-sheet ticket-sheet" catchtap="noop">
+      <view class="poster-grip"></view>
+      <view class="poster-sheet-title">导出票务图</view>
+
+      <scroll-view class="ticket-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+        <view class="poster-field-title">类型</view>
+        <view class="ticket-type-row">
+          <view
+            wx:for="{{ticketTypes}}"
+            wx:key="key"
+            class="ticket-type is-{{item.key}} {{ticketType === item.key ? 'is-on' : ''}}"
+            data-type="{{item.key}}"
+            bindtap="selectTicketType"
+          >
+            <text>{{item.label}}</text>
+          </view>
+        </view>
+
+        <block wx:if="{{ticketType === 'swap'}}">
+          <view class="poster-field-title ticket-give">我出</view>
+          <view class="ticket-search-wrap">
+            <input class="ticket-search" value="{{ticketGiveQuery}}" data-group="give" placeholder="已排片里选，或搜全部场次" bindinput="inputTicketSearch" />
+            <scroll-view class="ticket-dropdown" scroll-y enhanced show-scrollbar="{{false}}">
+              <view wx:if="{{!ticketGiveCandidates.length}}" class="ticket-empty">没有匹配的场次</view>
+              <view wx:for="{{ticketGiveCandidates}}" wx:key="id" class="ticket-candidate" data-group="give" data-id="{{item.id}}" bindtap="addTicketPick">
+                <view class="ticket-pk-body">
+                  <text class="ticket-pk-film">{{item.title}}</text>
+                  <text class="ticket-pk-meta">{{item.meta}}</text>
+                </view>
+                <text class="ticket-add">＋</text>
+              </view>
+            </scroll-view>
+          </view>
+          <view wx:for="{{ticketGiveRows}}" wx:key="id" class="ticket-selrow">
+            <view class="ticket-selhead">
+              <view class="ticket-pk-body">
+                <text class="ticket-pk-film">{{item.title}}</text>
+                <text class="ticket-pk-meta">{{item.meta}}</text>
+              </view>
+              <view class="ticket-remove" data-group="give" data-id="{{item.id}}" bindtap="removeTicketPick">×</view>
+            </view>
+            <view class="ticket-opt">
+              <view class="ticket-field">
+                <text class="ticket-fl">票价（可选，请勿高于原价）</text>
+                <input class="ticket-fi" value="{{item.price}}" data-group="give" data-id="{{item.id}}" data-field="price" placeholder="如 ¥80" bindinput="inputTicketField" />
+              </view>
+              <view class="ticket-field">
+                <text class="ticket-fl">座位号（可选）</text>
+                <input class="ticket-fi" value="{{item.seat}}" data-group="give" data-id="{{item.id}}" data-field="seat" placeholder="如 5 排 7-8" bindinput="inputTicketField" />
+              </view>
+            </view>
+          </view>
+
+          <view class="poster-field-title ticket-want">我求</view>
+          <view class="ticket-search-wrap">
+            <input class="ticket-search" value="{{ticketWantQuery}}" data-group="want" placeholder="搜索想换的场次" bindinput="inputTicketSearch" />
+            <scroll-view class="ticket-dropdown" scroll-y enhanced show-scrollbar="{{false}}">
+              <view wx:if="{{!ticketWantCandidates.length}}" class="ticket-empty">没有匹配的场次</view>
+              <view wx:for="{{ticketWantCandidates}}" wx:key="id" class="ticket-candidate" data-group="want" data-id="{{item.id}}" bindtap="addTicketPick">
+                <view class="ticket-pk-body">
+                  <text class="ticket-pk-film">{{item.title}}</text>
+                  <text class="ticket-pk-meta">{{item.meta}}</text>
+                </view>
+                <text class="ticket-add">＋</text>
+              </view>
+            </scroll-view>
+          </view>
+          <view wx:for="{{ticketWantRows}}" wx:key="id" class="ticket-selrow">
+            <view class="ticket-selhead">
+              <view class="ticket-pk-body">
+                <text class="ticket-pk-film">{{item.title}}</text>
+                <text class="ticket-pk-meta">{{item.meta}}</text>
+              </view>
+              <view class="ticket-remove" data-group="want" data-id="{{item.id}}" bindtap="removeTicketPick">×</view>
+            </view>
+            <view class="ticket-opt">
+              <view class="ticket-field">
+                <text class="ticket-fl">票价（可选，请勿高于原价）</text>
+                <input class="ticket-fi" value="{{item.price}}" data-group="want" data-id="{{item.id}}" data-field="price" placeholder="如 ¥80" bindinput="inputTicketField" />
+              </view>
+              <view class="ticket-field">
+                <text class="ticket-fl">座位号（可选）</text>
+                <input class="ticket-fi" value="{{item.seat}}" data-group="want" data-id="{{item.id}}" data-field="seat" placeholder="如 5 排 7-8" bindinput="inputTicketField" />
+              </view>
+            </view>
+          </view>
+        </block>
+
+        <block wx:else>
+          <view class="poster-field-title">场次</view>
+          <view class="ticket-search-wrap">
+            <input class="ticket-search" value="{{ticketQuery}}" data-group="main" placeholder="已排片里选，或搜全部场次" bindinput="inputTicketSearch" />
+            <scroll-view class="ticket-dropdown" scroll-y enhanced show-scrollbar="{{false}}">
+              <view wx:if="{{!ticketCandidates.length}}" class="ticket-empty">没有匹配的场次</view>
+              <view wx:for="{{ticketCandidates}}" wx:key="id" class="ticket-candidate" data-group="main" data-id="{{item.id}}" bindtap="addTicketPick">
+                <view class="ticket-pk-body">
+                  <text class="ticket-pk-film">{{item.title}}</text>
+                  <text class="ticket-pk-meta">{{item.meta}}</text>
+                </view>
+                <text class="ticket-add">＋</text>
+              </view>
+            </scroll-view>
+          </view>
+          <view wx:for="{{ticketRows}}" wx:key="id" class="ticket-selrow">
+            <view class="ticket-selhead">
+              <view class="ticket-pk-body">
+                <text class="ticket-pk-film">{{item.title}}</text>
+                <text class="ticket-pk-meta">{{item.meta}}</text>
+              </view>
+              <view class="ticket-remove" data-group="main" data-id="{{item.id}}" bindtap="removeTicketPick">×</view>
+            </view>
+            <view class="ticket-opt">
+              <view class="ticket-field">
+                <text class="ticket-fl">票价（可选，请勿高于原价）</text>
+                <input class="ticket-fi" value="{{item.price}}" data-group="main" data-id="{{item.id}}" data-field="price" placeholder="如 ¥80" bindinput="inputTicketField" />
+              </view>
+              <view class="ticket-field">
+                <text class="ticket-fl">座位号（可选）</text>
+                <input class="ticket-fi" value="{{item.seat}}" data-group="main" data-id="{{item.id}}" data-field="seat" placeholder="如 5 排 7-8" bindinput="inputTicketField" />
+              </view>
+            </view>
+          </view>
+        </block>
+
+        <view class="poster-field-title">联系方式（二选一）</view>
+        <view class="ticket-ctype">
+          <view class="ticket-c {{ticketContactMode === 'text' ? 'is-on' : ''}}" data-mode="text" bindtap="selectTicketContactMode">文字号码</view>
+          <view class="ticket-c {{ticketContactMode === 'qr' ? 'is-on' : ''}}" data-mode="qr" bindtap="selectTicketContactMode">二维码</view>
+        </view>
+        <input wx:if="{{ticketContactMode === 'text'}}" class="ticket-input" value="{{ticketContactValue}}" placeholder="如微信号 moviefan_88" bindinput="inputTicketContact" />
+        <view wx:else>
+          <view class="ticket-upload" bindtap="chooseTicketQr">
+            <image wx:if="{{ticketQrSrc}}" class="ticket-qr-preview" src="{{ticketQrSrc}}" mode="aspectFill" />
+            <text wx:else class="ticket-upload-text">选择二维码图片</text>
+          </view>
+          <input class="ticket-input" value="{{ticketContactValue}}" placeholder="二维码旁的说明（可选）" bindinput="inputTicketContact" />
+        </view>
+
+        <view class="poster-field-title">颜色</view>
+        <view class="poster-theme-row ticket-theme-row">
+          <view
+            wx:for="{{ticketThemeOptions}}"
+            wx:key="key"
+            class="poster-theme {{ticketTheme === item.key ? 'is-picked' : ''}}"
+            data-theme="{{item.key}}"
+            bindtap="selectTicketTheme"
+          >
+            <view class="poster-theme-swatch" style="background: {{item.swatch}};"></view>
+            <text>{{item.label}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="poster-actions">
+        <view class="poster-secondary" bindtap="closeTicketSheet">取消</view>
+        <view class="poster-primary {{ticketCanGenerate ? '' : 'is-disabled'}}" bindtap="generateTicketPoster">
+          {{ticketSelectedCount ? '生成 · 已选 ' + ticketSelectedCount + ' 场' : '生成长图'}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{planNoteDialogOpen}}" class="import-mask" catchtap="closePlanNote">
+    <view class="note-dialog" catchtap="noop">
+      <view class="import-head">
+        <view class="import-title">场次备注</view>
+        <view class="import-close" bindtap="closePlanNote">×</view>
+      </view>
+      <view class="note-dialog-title">{{planNoteTitle}}</view>
+      <textarea
+        class="note-input"
+        value="{{planNoteDraft}}"
+        maxlength="40"
+        fixed
+        placeholder="比如：让 A 抢、已抢到"
+        bindinput="inputPlanNote"
+      ></textarea>
+      <view class="note-count">{{planNoteCount}}</view>
+      <view class="import-actions">
+        <view class="import-secondary" bindtap="closePlanNote">取消</view>
+        <view class="import-primary" bindtap="confirmPlanNote">保存</view>
       </view>
     </view>
   </view>
@@ -201,6 +444,13 @@
     class="poster-canvas"
     style="width: {{posterWidth}}px; height: {{posterHeight}}px;"
   ></canvas>
+  <canvas
+    id="ticketPoster"
+    type="2d"
+    class="poster-canvas"
+    style="width: {{ticketPosterWidth}}px; height: {{ticketPosterHeight}}px;"
+  ></canvas>
 
   <smart-plan id="smartPlan" bindplanned="onSmartPlanned"></smart-plan>
+  <view wx:if="{{showScrollTop}}" class="scroll-top-button" bindtap="scrollToTop"></view>
 </view>

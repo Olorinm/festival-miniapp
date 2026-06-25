@@ -3,6 +3,7 @@
     "pages/schedule/index",
     "pages/films/index",
     "pages/plan/index",
+    "pages/popularity/index",
     "pages/about/index",
     "pages/film/detail"
   ],
@@ -14,6 +15,7 @@
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
+    "custom": true,
     "color": "#717171",
     "selectedColor": "#171917",
     "backgroundColor": "#FFFFFF",
@@ -36,6 +38,12 @@
         "text": "排片表",
         "iconPath": "assets/tab/plan.png",
         "selectedIconPath": "assets/tab/plan-active.png"
+      },
+      {
+        "pagePath": "pages/popularity/index",
+        "text": "热度榜",
+        "iconPath": "assets/tab/popularity.png",
+        "selectedIconPath": "assets/tab/popularity-active.png"
       }
     ]
   },

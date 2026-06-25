@@ -11,15 +11,24 @@ const {
   filmRatingSummary,
   filmRuntimeMinutes,
   filmSection,
+  filmSynopsis,
   filmYear,
   findFilmScreenings,
+  getFilmInterest,
   getInterestMeta,
   runtimeText,
   slashMeta
 } = require('../../utils/schedule')
 const { getNavMetrics } = require('../../utils/nav')
+const { enableShareMenu, shareAppMessage, shareTimeline } = require('../../utils/share')
+const { syncTabBar } = require('../../utils/tab-bar')
 
 const app = getApp()
+
+function festivalDisplayName() {
+  const meta = app.globalData.festivalMeta || {}
+  return meta.displayName || meta.name || '电影节'
+}
 
 const DEFAULT_SORT = 'default'
 const DEFAULT_GROUP = 'section'
@@ -29,9 +38,10 @@ const VIEW_STATE_VERSION = 2
 const FIELD_CONFIG_KEY = 'festival.filmFieldConfig'
 const FIELD_OPTIONS = [
   { key: 'info', label: '影片信息', desc: '年份 · 导演 · 片长 · 单元' },
-  { key: 'rating', label: '影片评分', desc: '豆瓣 / IMDb 评分' }
+  { key: 'rating', label: '影片评分', desc: '豆瓣 / IMDb 评分' },
+  { key: 'synopsis', label: '简介', desc: '剧情简介 / 一句话介绍' }
 ]
-const DEFAULT_FIELD_CONFIG = { info: true, rating: true }
+const DEFAULT_FIELD_CONFIG = { info: true, rating: true, synopsis: false }
 
 function readFieldConfig() {
   try {
@@ -234,7 +244,7 @@ function listSignature(source) {
 
 Page({
   data: {
-    festivalName: app.globalData.festivalMeta.name,
+    festivalName: festivalDisplayName(),
     query: '',
     activeInterest: initialActiveInterest,
     activeSort: initialActiveSort,
@@ -247,6 +257,8 @@ Page({
     filmGroups: [],
     groupHeaderFallback: initialViewState.groupHeaderFallback || defaultGroupHeader(initialActiveSort),
     grouped: false,
+    hasGroupedView: false,
+    allGroupsCollapsed: false,
     navTop: 0,
     navHeight: 44,
     navRight: 120,
@@ -273,7 +285,8 @@ Page({
     imdbMin: 0,
     sectionOptions: [],
     directorFilterOptions: [],
-    filterActiveCount: 0
+    filterActiveCount: 0,
+    showScrollTop: false
   },
 
   onLoad() {
@@ -282,6 +295,8 @@ Page({
   },
 
   onShow() {
+    syncTabBar(this, 0)
+    enableShareMenu()
     this.setNavMetrics()
     this.refreshFilmsAfterVisible()
     app.whenFestivalDataReady().then(() => {
@@ -293,8 +308,36 @@ Page({
     this.refreshFilmsAfterVisible()
   },
 
+  onPageScroll(event) {
+    const showScrollTop = Number(event.scrollTop) > 520
+    if (showScrollTop !== this.data.showScrollTop) {
+      this.setData({ showScrollTop })
+    }
+  },
+
+  onShareAppMessage() {
+    return shareAppMessage({
+      title: '选电影',
+      path: '/pages/films/index'
+    })
+  },
+
+  onShareTimeline() {
+    return shareTimeline({
+      title: '选电影',
+      path: '/pages/films/index'
+    })
+  },
+
   setNavMetrics() {
     this.setData(getNavMetrics())
+  },
+
+  scrollToTop() {
+    wx.pageScrollTo({
+      scrollTop: 0,
+      duration: 260
+    })
   },
 
   refreshFilmsAfterVisible() {
@@ -456,6 +499,26 @@ Page({
     })
   },
 
+  toggleAllGroups() {
+    if (!this.data.hasGroupedView) {
+      return
+    }
+    const collapsedGroups = Object.assign({}, this.data.collapsedGroups)
+    if (this.data.allGroupsCollapsed) {
+      ;(this.data.filmGroups || []).forEach(group => {
+        delete collapsedGroups[group.key]
+      })
+    } else {
+      ;(this.data.filmGroups || []).forEach(group => {
+        collapsedGroups[group.key] = true
+      })
+    }
+    this.setData({ collapsedGroups }, () => {
+      this.saveViewState()
+      this.renderFilms()
+    })
+  },
+
   saveViewState(extra) {
     const viewState = Object.assign({}, app.globalData.filmViewState || {}, {
       viewVersion: VIEW_STATE_VERSION,
@@ -540,7 +603,7 @@ Page({
     const active = this.data.activeInterest
 
     const films = app.globalData.films.map((film, index) => {
-      const interest = getInterestMeta(marks[film.id] || film.defaultInterest)
+      const interest = getFilmInterest(film, marks)
       const mark = interest.key
       const relatedScreenings = findFilmScreenings(film, allScreenings)
       const selectedCount = relatedScreenings.filter(screening => selectedIds.includes(screening.id)).length
@@ -554,6 +617,7 @@ Page({
       const runtime = filmRuntimeMinutes(film)
       const posterSrc = filmPosterSrc(film)
       const ratingSummary = filmRatingSummary(film)
+      const synopsisText = filmSynopsis(film)
       const searchText = [
         cnTitle,
         enTitle,
@@ -562,6 +626,7 @@ Page({
         country,
         year,
         genre,
+        synopsisText,
         relatedScreenings.map(screening => `${screening.cinema} ${screening.hall}`).join(' ')
       ].join(' ').toLowerCase()
 
@@ -580,6 +645,7 @@ Page({
         directorLine: director,
         sectionLabel: section,
         ratingSummary,
+        synopsisText,
         runtimeLabel: runtimeText(runtime),
         metaText: slashMeta([filmCoreMeta(film), director]),
         searchText
@@ -630,15 +696,19 @@ Page({
     const firstHeader = filmGroups[0] && filmGroups[0].headerText
 
     const groupHeaderFallback = firstHeader || defaultGroupHeader(this.data.activeSort)
+    const hasGroupedView = this.data.activeSort !== DEFAULT_SORT && filmGroups.length > 0
+    const allGroupsCollapsed = hasGroupedView && filmGroups.every(group => this.data.collapsedGroups && this.data.collapsedGroups[group.key])
     this._lastFilmRenderSignature = this.buildFilmRenderSignature({ activeSection, activeDirector })
 
     this.setData({
-      festivalName: app.globalData.festivalMeta.name,
+      festivalName: festivalDisplayName(),
       markOptions: app.globalData.interestOptions,
       films: filteredFilms,
       filmGroups,
       groupHeaderFallback,
       grouped: this.data.activeSort !== DEFAULT_SORT,
+      hasGroupedView,
+      allGroupsCollapsed,
       sortFilterLabel: sortFilterLabel(this.data.activeSort),
       stats: collectStats(app.globalData.films, selectedIds, marks),
       activeSection,

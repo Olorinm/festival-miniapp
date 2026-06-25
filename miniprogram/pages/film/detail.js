@@ -14,9 +14,11 @@ const {
   findFilmScreenings,
   findConflicts,
   findFilm,
+  getFilmInterest,
   getInterestMeta,
   runtimeText
 } = require('../../utils/schedule')
+const { enableShareMenu, shareAppMessage, shareTimeline } = require('../../utils/share')
 
 const app = getApp()
 
@@ -52,6 +54,36 @@ function buildHeadMetaRows(film) {
   return meta ? [meta] : []
 }
 
+function externalRatingHref(film, key) {
+  if (key === 'douban') {
+    if (film.doubanUrl) return film.doubanUrl
+    if (film.doubanId) return `https://movie.douban.com/subject/${film.doubanId}/`
+  }
+  if (key === 'imdb') {
+    if (film.imdbUrl) return film.imdbUrl
+    if (film.imdbId) return `https://www.imdb.com/title/${film.imdbId}/`
+  }
+  return ''
+}
+
+function detailRatingItems(film) {
+  const items = filmRatingItems(film).map(item => Object.assign({}, item, {
+    href: externalRatingHref(film, item.key)
+  }))
+  const hasDoubanRating = items.some(item => item.key === 'douban')
+  const doubanHref = externalRatingHref(film, 'douban')
+  if (doubanHref && !hasDoubanRating) {
+    items.unshift({
+      key: 'douban',
+      label: '豆瓣',
+      value: '暂无评分',
+      extra: '',
+      href: doubanHref
+    })
+  }
+  return items
+}
+
 function filmSynopsis(film) {
   return String(film.synopsis || film.tmdbOverview || film.overview || '').trim()
 }
@@ -79,9 +111,28 @@ Page({
   },
 
   onShow() {
+    enableShareMenu()
     this.renderFilm()
     app.whenFestivalDataReady().then(() => {
       this.renderFilm()
+    })
+  },
+
+  onShareAppMessage() {
+    const film = this.data.film || {}
+    return shareAppMessage({
+      title: film.cnTitle || '影片详情',
+      path: `/pages/film/detail?id=${encodeURIComponent(this.data.filmId || '')}`,
+      imageUrl: film.posterSrc || ''
+    })
+  },
+
+  onShareTimeline() {
+    const film = this.data.film || {}
+    return shareTimeline({
+      title: film.cnTitle || '影片详情',
+      path: `/pages/film/detail?id=${encodeURIComponent(this.data.filmId || '')}`,
+      imageUrl: film.posterSrc || ''
     })
   },
 
@@ -112,6 +163,17 @@ Page({
     }).then(() => this.renderFilm())
   },
 
+  copyRatingLink(event) {
+    const url = event.currentTarget.dataset.url
+    if (!url) {
+      return
+    }
+    wx.setClipboardData({
+      data: url,
+      success: () => wx.showToast({ title: '链接已复制', icon: 'none' })
+    })
+  },
+
   renderFilm() {
     const renderToken = (this._renderToken || 0) + 1
     this._renderToken = renderToken
@@ -122,13 +184,13 @@ Page({
 
     const marks = app.getFilmMarks()
     const selectedIds = app.getSelectedScreeningIds()
-    const interest = getInterestMeta(marks[rawFilm.id] || rawFilm.defaultInterest)
+    const interest = getFilmInterest(rawFilm, marks)
     const mark = interest.key
     const interestWord = ['未标记', '待定', '想看', '必看'][interest.rank] || '未标记'
     const runtime = filmRuntimeMinutes(rawFilm)
     const section = filmSection(rawFilm)
     const genre = filmGenre(rawFilm)
-    const ratingItems = filmRatingItems(rawFilm)
+    const ratingItems = detailRatingItems(rawFilm)
     const infoRows = buildInfoRows(rawFilm)
     const headMetaRows = buildHeadMetaRows(rawFilm)
     const posterSrc = filmPosterSrc(rawFilm)
@@ -140,6 +202,7 @@ Page({
         const conflicts = findConflicts(screening, selectedIds.filter(id => id !== screening.id), allScreenings)
         return {
           ...screening,
+          specialTag: screening.specialTag || (screening.addedSchedule ? '加场' : ''),
           selected: selectedIds.includes(screening.id),
           conflict: conflicts.length > 0,
           conflictText: conflicts.map(item => `${item.timeRange} ${item.cnTitle}`).join(' / '),

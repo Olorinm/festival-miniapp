@@ -1572,6 +1572,7 @@ a {
 .interest,
 .price,
 .ticket,
+.special-tag,
 .popularity {
   display: inline-flex;
   align-items: center;
@@ -1601,6 +1602,12 @@ a {
 .popularity {
   color: #536b84;
   background: #eef4f7;
+  font-weight: 650;
+}
+
+.special-tag {
+  background: #fff1e8;
+  color: #9b5425;
   font-weight: 650;
 }
 
@@ -2203,8 +2210,8 @@ a {
 }
 
 .poster-theme.is-picked {
-  border-color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  border-color: #4aa3f7;
+  box-shadow: none;
 }
 
 .poster-theme-swatch {
@@ -2212,6 +2219,10 @@ a {
   height: 11px;
   border: 1px solid rgba(22, 23, 22, 0.12);
   border-radius: 50%;
+}
+
+.ticket-theme-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .poster-option-row {
@@ -2316,6 +2327,9 @@ a {
   justify-content: center;
   padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
   background: rgba(22, 23, 22, 0.72);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .poster-preview {
@@ -2365,6 +2379,7 @@ a {
   flex: 1 1 auto;
   overflow: auto;
   padding: 0 14px 12px;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -2375,6 +2390,27 @@ a {
   border-radius: 7px;
   background: #ffffff;
   box-shadow: 0 1px 0 rgba(22, 23, 22, 0.08);
+  -webkit-touch-callout: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.poster-preview-actions {
+  flex: 0 0 auto;
+  padding: 9px 14px max(12px, env(safe-area-inset-bottom));
+}
+
+.poster-preview-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  background: #171917;
+  color: #ffffff;
+  font-size: 14.5px;
+  font-weight: 760;
 }
 
 .smart-mask,
@@ -3163,6 +3199,93 @@ a {
   font-weight: 650;
 }
 
+.miniapp-announcement-mask {
+  z-index: 118;
+  padding: 18px;
+}
+
+.miniapp-announcement {
+  position: relative;
+  width: min(350px, calc(100vw - 36px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+}
+
+.miniapp-announcement-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #818780;
+  font-size: 25px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.miniapp-announcement-title {
+  padding: 26px 44px 8px;
+  color: #171917;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.28;
+  text-align: center;
+}
+
+.miniapp-announcement-copy {
+  padding: 0 24px;
+  color: #656b64;
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.miniapp-announcement-qr-wrap {
+  width: 236px;
+  max-width: calc(100% - 48px);
+  margin: 18px auto 20px;
+  padding: 10px;
+  border: 1px solid #eceee9;
+  border-radius: 10px;
+  background: #fbfbfa;
+}
+
+.miniapp-announcement-qr {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.miniapp-announcement-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #ececea;
+}
+
+.miniapp-announcement-secondary,
+.miniapp-announcement-primary {
+  height: 50px;
+  border-right: 1px solid #ececea;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.miniapp-announcement-secondary {
+  color: #686f69;
+}
+
+.miniapp-announcement-primary {
+  border-right: 0;
+  color: #576b95;
+}
+
 .toast {
   position: fixed;
   z-index: 120;
@@ -3326,8 +3449,8 @@ a {
 
 .stats-table-row {
   display: grid;
-  grid-template-columns: 1.3fr repeat(5, minmax(54px, 0.7fr));
-  min-width: 520px;
+  grid-template-columns: 1.3fr repeat(7, minmax(54px, 0.7fr));
+  min-width: 640px;
   border-top: 1px solid #eceee8;
 }
 
@@ -3414,8 +3537,7 @@ a {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  height: 56px;
+  height: 44px;
   padding: 0 4px;
   border: 1px solid #e3e6ea;
   border-radius: 9px;
@@ -3428,15 +3550,9 @@ a {
   font-weight: 680;
 }
 
-.ticket-type-hint {
-  color: #9aa09a;
-  font-size: 10px;
-  font-weight: 500;
-}
-
 .ticket-type.is-on {
-  border-color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  border-color: #4aa3f7;
+  box-shadow: none;
 }
 
 .poster-field-title.ticket-give,
@@ -3455,6 +3571,14 @@ a {
   background: #ffffff;
   color: #303530;
   font-size: 12.5px;
+}
+
+.ticket-search:focus,
+.ticket-input:focus,
+.ticket-fi:focus {
+  border-color: #ccd3cc;
+  outline: 0;
+  box-shadow: none;
 }
 
 .ticket-search::placeholder,
@@ -3542,9 +3666,9 @@ a {
 }
 
 .ticket-c.is-on {
-  border-color: #1d8fff;
-  color: #1d8fff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  border-color: #4aa3f7;
+  color: #248df2;
+  box-shadow: none;
 }
 
 .ticket-upload {
@@ -3583,10 +3707,10 @@ a {
 
 .ticket-selrow {
   padding: 11px 11px 12px;
-  border: 1px solid #1d8fff;
+  border: 1px solid #4aa3f7;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(29, 143, 255, 0.16);
+  box-shadow: none;
 }
 
 .ticket-selhead {
@@ -3607,16 +3731,21 @@ a {
 .ticket-dropdown {
   display: flex;
   flex-direction: column;
+  max-height: 212px;
   margin-top: 6px;
   border: 1px solid #f0f0ec;
   border-radius: 8px;
   background: #ffffff;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
 }
 
 .ticket-candidate {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 10px;
   width: 100%;
   padding: 10px 12px;
@@ -3649,4 +3778,29 @@ a {
   display: block;
   width: 14px;
   height: 14px;
+}
+
+/* iOS / WeChat WebView zooms the page when focused inputs are below 16px. */
+.search-input,
+.smart-input,
+.import-input,
+.scheme-modal-input,
+.plan-note-input,
+.ticket-search,
+.ticket-input,
+.ticket-fi,
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: 0;
+  box-shadow: none;
 }

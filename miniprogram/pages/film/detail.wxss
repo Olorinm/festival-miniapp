@@ -405,6 +405,12 @@
   font-weight: 600;
 }
 
+.special-tag {
+  color: #7b5c1c;
+  background: #f7efd8;
+  font-weight: 600;
+}
+
 .conflict {
   color: #a65e11;
 }

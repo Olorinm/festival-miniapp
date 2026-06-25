@@ -28,9 +28,14 @@
   </view>
 
   <view class="about-section">
+    <view class="section-title">隐私与统计</view>
+    <view class="section-body">使用智能排片时，偏好文本会发送给 AI 服务解析；开启热度情况时，会匿名统计你选择的场次。</view>
+  </view>
+
+  <view class="about-section">
     <view class="section-title">交流群</view>
-    <view class="section-body">长按二维码识别加入，反馈问题、交流选片和排片。</view>
-    <view class="group-qr-card" bindtap="previewGroupQr" hover-class="group-qr-tap">
+    <view class="section-body">{{groupHint}}</view>
+    <view wx:if="{{groupQrSrc}}" class="group-qr-card" bindtap="previewGroupQr" hover-class="group-qr-tap">
       <image class="group-qr-image" src="{{groupQrSrc}}" mode="widthFix" show-menu-by-longpress="{{true}}" />
     </view>
   </view>

@@ -4,9 +4,12 @@
       <image class="app-about-icon" src="/assets/brand/opengrove-sapling-on-light.png" mode="aspectFit" />
       <text>关于</text>
     </navigator>
-    <view class="app-nav-title is-with-context">
-      <text class="app-nav-main">选电影</text>
-      <text class="app-nav-context">{{festivalName}}</text>
+    <view class="app-nav-title is-festival-title">
+      <view class="app-nav-edition">
+        <text class="app-nav-number">28</text>
+        <text class="app-nav-suffix">th</text>
+      </view>
+      <text class="app-nav-word">SIFF</text>
     </view>
   </view>
 </view>
@@ -35,45 +38,53 @@
     </view>
   </view>
 
-  <scroll-view class="film-filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
-    <view class="film-filter-row">
-      <view class="interest-segment">
+  <view class="film-filter-bar">
+    <scroll-view class="film-filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="film-filter-row">
+        <view class="interest-segment">
+          <view
+            wx:for="{{filters}}"
+            wx:key="key"
+            wx:if="{{item.type !== 'sort'}}"
+            class="interest-option {{activeInterest === item.key ? 'is-active' : ''}}"
+            data-key="{{item.key}}"
+            data-type="{{item.type}}"
+            bindtap="handleFilterTap"
+          >
+            <text class="pill-label">{{item.label}}</text>
+          </view>
+        </view>
+
         <view
           wx:for="{{filters}}"
           wx:key="key"
-          wx:if="{{item.type !== 'sort'}}"
-          class="interest-option {{activeInterest === item.key ? 'is-active' : ''}}"
+          wx:if="{{item.type === 'sort'}}"
+          class="film-tool-chip {{sortOpen ? 'is-active' : ''}}"
           data-key="{{item.key}}"
           data-type="{{item.type}}"
           bindtap="handleFilterTap"
         >
-          <text class="pill-label">{{item.label}}</text>
+          <text class="film-tool-label">{{sortFilterLabel}}</text>
+          <text class="filter-triangle">▼</text>
+        </view>
+
+        <view class="film-tool-chip {{filterPanelOpen ? 'is-active' : ''}}" bindtap="toggleFilterPanel">
+          <text class="film-tool-label">筛选</text>
+          <text wx:if="{{filterActiveCount}}" class="filter-count">· {{filterActiveCount}}</text>
+        </view>
+
+        <view class="film-tool-chip {{fieldPanelOpen ? 'is-active' : ''}}" bindtap="toggleFieldPanel">
+          <text class="film-tool-label">字段</text>
         </view>
       </view>
+    </scroll-view>
 
-      <view
-        wx:for="{{filters}}"
-        wx:key="key"
-        wx:if="{{item.type === 'sort'}}"
-        class="film-tool-chip {{sortOpen ? 'is-active' : ''}}"
-        data-key="{{item.key}}"
-        data-type="{{item.type}}"
-        bindtap="handleFilterTap"
-      >
-        <text class="film-tool-label">{{sortFilterLabel}}</text>
-        <text class="filter-triangle">▼</text>
-      </view>
-
-      <view class="film-tool-chip {{filterPanelOpen ? 'is-active' : ''}}" bindtap="toggleFilterPanel">
-        <text class="film-tool-label">筛选</text>
-        <text wx:if="{{filterActiveCount}}" class="filter-count">· {{filterActiveCount}}</text>
-      </view>
-
-      <view class="film-tool-chip {{fieldPanelOpen ? 'is-active' : ''}}" bindtap="toggleFieldPanel">
-        <text class="film-tool-label">字段</text>
-      </view>
-    </view>
-  </scroll-view>
+    <view
+      wx:if="{{hasGroupedView}}"
+      class="group-toggle-icon {{allGroupsCollapsed ? 'is-expand' : 'is-collapse'}}"
+      bindtap="toggleAllGroups"
+    ></view>
+  </view>
 
   <view wx:if="{{sortOpen}}" class="sort-panel">
     <view class="sort-grid">
@@ -212,6 +223,7 @@
                 <text wx:if="{{fieldConfig.info && item.sectionLabel}}" class="film-section">{{item.sectionLabel}}</text>
                 <text wx:if="{{fieldConfig.rating && item.ratingSummary}}" class="film-rating">{{item.ratingSummary}}</text>
               </view>
+              <view wx:if="{{fieldConfig.synopsis && item.synopsisText}}" class="film-synopsis">{{item.synopsisText}}</view>
             </view>
             <view class="star-rail" catchtap="noop">
               <view
@@ -239,4 +251,5 @@
   </view>
 
   <smart-plan id="smartPlan"></smart-plan>
+  <view wx:if="{{showScrollTop}}" class="scroll-top-button" bindtap="scrollToTop"></view>
 </view>

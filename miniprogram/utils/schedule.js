@@ -1,4 +1,17 @@
-const { interestOptions: fallbackInterestOptions } = require('../data/festival')
+// @paired-with web/lib/schedule.cjs
+// @platform-divergence: getCommuteRoutes reads app globalData; miniapp poster canvas asset handling; slash card meta
+const { interestOptions: fallbackInterestOptions } = require('../data/festival-lite')
+const {
+  buildPlan,
+  byScreeningTime,
+  findConflicts,
+  groupByDay,
+  resolveScreeningTiming,
+  toMinutes
+} = require('./generated/schedule-core')
+
+const MAX_WALKING_COMMUTE_MIN = 75
+const MAX_WALKING_ROUTE_RATIO = 3
 
 const noInterest = {
   key: 'none',
@@ -22,31 +35,148 @@ function getInterestMeta(key) {
   return interestOptions.find(item => item.key === key) || noInterest
 }
 
+function markIdsForFilm(film) {
+  const ids = [film && film.id]
+    .concat(Array.isArray(film && film.markAliasFilmIds) ? film.markAliasFilmIds : [])
+    .filter(Boolean)
+  return Array.from(new Set(ids))
+}
+
+function getFilmMark(film, filmMarks) {
+  const marks = filmMarks || {}
+  const markedId = markIdsForFilm(film).find(id => marks[id])
+  return markedId ? marks[markedId] : (film && film.defaultInterest)
+}
+
+function getFilmInterest(film, filmMarks) {
+  return getInterestMeta(getFilmMark(film, filmMarks))
+}
+
 function resolveScreeningInterest(film, filmById, filmMarks) {
   const ids = [film.id].concat(Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [])
   return ids.reduce((best, id) => {
     const sourceFilm = id === film.id ? film : filmById.get(id)
-    const interest = getInterestMeta(filmMarks[id] || (sourceFilm && sourceFilm.defaultInterest))
+    const interest = getFilmInterest(sourceFilm, filmMarks)
     return interest.rank > best.rank ? interest : best
   }, noInterest)
 }
 
-function toMinutes(time) {
-  const parts = String(time).split(':')
-  const hour = Number(parts[0] || 0)
-  const minute = Number(parts[1] || 0)
-  return hour * 60 + minute
+function routeKey(from, to) {
+  return `${from}__${to}`
 }
 
-function endMinutes(screening) {
-  const start = toMinutes(screening.start)
-  const end = toMinutes(screening.end)
-  return end <= start ? end + 24 * 60 : end
+function commutePairKey(a, b) {
+  return [a, b].sort().join('__')
 }
 
-function byScreeningTime(a, b) {
-  const dateOrder = a.date.localeCompare(b.date)
-  return dateOrder || toMinutes(a.start) - toMinutes(b.start)
+function validRoute(route) {
+  return route && !route.error ? route : null
+}
+
+function getCommuteRoutes() {
+  try {
+    const app = typeof getApp === 'function' ? getApp() : null
+    return app && app.globalData && app.globalData.commuteRoutes || {}
+  } catch (error) {
+    return {}
+  }
+}
+
+function usableWalkingRoute(route, directDistance) {
+  const walking = validRoute(route)
+  if (!walking) {
+    return null
+  }
+  const directKm = numericValue(directDistance)
+  const walkingKm = numericValue(walking.distanceKm)
+  const walkingMin = numericValue(walking.durationMin)
+  if (walkingMin > MAX_WALKING_COMMUTE_MIN) {
+    return null
+  }
+  if (directKm && walkingKm && walkingKm / directKm > MAX_WALKING_ROUTE_RATIO) {
+    return null
+  }
+  return walking
+}
+
+function formatCommuteDistance(value) {
+  const distance = numericValue(value)
+  if (!distance) {
+    return ''
+  }
+  if (distance < 10) {
+    return `${distance.toFixed(1).replace(/\.0$/, '')}km`
+  }
+  return `${Math.round(distance)}km`
+}
+
+function formatCommuteDuration(value) {
+  const minutes = Math.round(numericValue(value))
+  return minutes > 0 ? `${minutes}分` : ''
+}
+
+function makeCommuteMode(key, label, route) {
+  const duration = formatCommuteDuration(route && route.durationMin)
+  if (!duration) {
+    return null
+  }
+  const icons = {
+    transit: '🚌',
+    cycling: '🚲',
+    walking: '🚶'
+  }
+  return {
+    key,
+    label,
+    durationMin: Math.round(numericValue(route.durationMin)),
+    distanceKm: numericValue(route.distanceKm),
+    text: `${icons[key] || ''}${duration}`
+  }
+}
+
+function commuteBetween(fromScreening, toScreening) {
+  if (!fromScreening || !toScreening || fromScreening.date !== toScreening.date) {
+    return null
+  }
+
+  const from = firstText(fromScreening.cinema)
+  const to = firstText(toScreening.cinema)
+  if (!from || !to) {
+    return null
+  }
+
+  if (from === to) {
+    return {
+      kind: 'same',
+      from,
+      to,
+      distanceText: '同影院',
+      modes: []
+    }
+  }
+
+  const commuteRoutes = getCommuteRoutes()
+  const directDistance = numericValue(commuteRoutes.direct && commuteRoutes.direct[commutePairKey(from, to)])
+  const transit = validRoute(commuteRoutes.transit && commuteRoutes.transit[routeKey(from, to)])
+  const walking = usableWalkingRoute(commuteRoutes.walking && commuteRoutes.walking[commutePairKey(from, to)], directDistance)
+  const cycling = validRoute(commuteRoutes.cycling && commuteRoutes.cycling[commutePairKey(from, to)])
+  const modes = walking
+    ? [makeCommuteMode('transit', '公交', transit), makeCommuteMode('walking', '步行', walking)].filter(Boolean)
+    : [makeCommuteMode('transit', '公交', transit), makeCommuteMode('cycling', '骑车', cycling)].filter(Boolean)
+
+  if (!modes.length) {
+    return null
+  }
+
+  const distanceText = formatCommuteDistance(directDistance)
+
+  return {
+    kind: walking ? 'near' : 'far',
+    from,
+    to,
+    distanceText,
+    modes
+  }
 }
 
 function buildScreenings(films, marks) {
@@ -62,6 +192,8 @@ function buildScreenings(films, marks) {
       const rows = film.screenings.map(screening => {
         const ticket = sanitizeTicketText(screening.ticket)
         const ticketPlan = sanitizeTicketText(screening.ticketPlan || ticket)
+        const runtime = filmRuntimeMinutes(film)
+        const timing = resolveScreeningTiming(screening, runtime)
         return {
           filmId: film.id,
           cnTitle: filmDisplayTitle(film),
@@ -70,11 +202,14 @@ function buildScreenings(films, marks) {
           director: filmDirector(film),
           country: filmCountry(film),
           year: filmYear(film),
-          runtime: filmRuntimeMinutes(film),
+          runtime,
           posterSrc: filmPosterSrc(film),
+          posterCanvasSrc: filmPosterCanvasSrc(film),
+          posterCanvasSrcs: filmPosterCanvasSrcs(film),
           cardMeta: slashMeta([filmCoreMeta(film), filmDirector(film)]),
           sectionLabel: filmSection(film),
           ratingSummary: filmRatingSummary(film),
+          synopsis: filmSynopsis(film),
           doubanRating: film.doubanRating,
           imdbRating: film.imdbRating,
           memberFilmIds: Array.isArray(film.memberFilmIds) ? film.memberFilmIds : [],
@@ -82,10 +217,12 @@ function buildScreenings(films, marks) {
           programType: film.programType || '',
           interestKey,
           interest,
-          timeRange: `${screening.start}-${screening.end}`,
-          startMinutes: toMinutes(screening.start),
-          endMinutes: endMinutes(screening),
-          duration: endMinutes(screening) - toMinutes(screening.start),
+          timeRange: screening.end ? `${screening.start}-${screening.end}` : screening.start,
+          startMinutes: timing.startMinutes,
+          endMinutes: timing.endMinutes,
+          duration: timing.duration,
+          durationKnown: timing.durationKnown,
+          hasUnknownDuration: !timing.durationKnown,
           screenMeta: filmScreeningMeta(film),
           searchText: [
             filmDisplayTitle(film),
@@ -94,6 +231,7 @@ function buildScreenings(films, marks) {
             filmSection(film),
             filmCountry(film),
             filmGenre(film),
+            filmSynopsis(film),
             film.memberCnTitles,
             memberFilms.map(member => [
               filmDisplayTitle(member),
@@ -181,6 +319,10 @@ function filmAwards(film) {
   return firstText([film.awards, film.awardText])
 }
 
+function filmSynopsis(film) {
+  return firstText([film && film.synopsis, film && film.tmdbOverview, film && film.overview])
+}
+
 function filmCountry(film) {
   return firstText([film.country, film.region, film.countries])
 }
@@ -220,11 +362,62 @@ function isDefaultPosterSrc(src) {
   return /\/pics\/subject\/movie_(large|mid|small)\.jpg(?:\?|$)/.test(String(src || ''))
 }
 
-function filmPosterSrc(film) {
-  if (isDefaultPosterSrc(firstText([film.posterUrl, film.coverUrl, film.cover]))) {
+function isIgnoredLocalPosterSrc(src) {
+  return /^\/?(?:miniprogram\/)?assets\/posters\//.test(String(src || '').trim())
+}
+
+function normalizeLocalAssetSrc(src) {
+  const value = firstText(src)
+  if (!value) {
     return ''
   }
-  return firstText([film.posterCloudFileId, film.posterUrl, film.coverUrl, film.cover, film.posterAssetPath, film.poster])
+  return `/${value.replace(/^\/?miniprogram\//, '').replace(/^\/+/, '')}`
+}
+
+function uniqueTextValues(items) {
+  const seen = {}
+  return (items || [])
+    .map(firstText)
+    .filter(Boolean)
+    .filter(item => {
+      if (seen[item]) {
+        return false
+      }
+      seen[item] = true
+      return true
+    })
+}
+
+function filmPosterSrc(film) {
+  const remoteCandidates = [
+    film.posterCloudFileId,
+    film.posterUrl,
+    film.coverUrl,
+    film.cover,
+    film.poster
+  ].map(firstText).filter(Boolean)
+  const remote = remoteCandidates.find(src => !isDefaultPosterSrc(src))
+  if (remote) {
+    return remote
+  }
+
+  const local = firstText(film.posterAssetPath)
+  return isIgnoredLocalPosterSrc(local) ? '' : local
+}
+
+function filmPosterCanvasSrc(film) {
+  return filmPosterCanvasSrcs(film)[0] || ''
+}
+
+function filmPosterCanvasSrcs(film) {
+  return uniqueTextValues([
+    film.posterCloudFileId,
+    normalizeLocalAssetSrc(film.posterAssetPath),
+    film.posterUrl,
+    film.coverUrl,
+    film.cover,
+    film.poster
+  ])
 }
 
 function formatRating(value) {
@@ -302,74 +495,6 @@ function findFilmScreenings(film, allScreenings) {
   return (allScreenings || []).filter(screening => isRelatedScreeningForFilm(screening, film))
 }
 
-function hasOverlap(a, b) {
-  if (!a || !b || a.id === b.id || a.date !== b.date) {
-    return false
-  }
-  return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes
-}
-
-function findConflicts(screening, selectedIds, allScreenings) {
-  const selected = allScreenings.filter(item => selectedIds.includes(item.id))
-  return selected.filter(item => hasOverlap(screening, item))
-}
-
-function groupByDay(screenings) {
-  const map = {}
-  screenings.forEach(screening => {
-    if (!map[screening.date]) {
-      map[screening.date] = {
-        date: screening.date,
-        dayLabel: screening.dayLabel,
-        items: []
-      }
-    }
-    map[screening.date].items.push(screening)
-  })
-  return Object.keys(map)
-    .sort()
-    .map(date => map[date])
-}
-
-function buildPlan(selectedIds, allScreenings) {
-  const selected = allScreenings
-    .filter(screening => selectedIds.includes(screening.id))
-    .sort(byScreeningTime)
-
-  const conflictPairs = []
-  const conflictIds = {}
-  selected.forEach((screening, index) => {
-    selected.slice(index + 1).forEach(other => {
-      if (hasOverlap(screening, other)) {
-        conflictPairs.push({
-          id: `${screening.id}_${other.id}`,
-          a: screening,
-          b: other,
-          label: `${screening.dayLabel} ${screening.timeRange} ${screening.cnTitle} / ${other.timeRange} ${other.cnTitle}`
-        })
-        conflictIds[screening.id] = true
-        conflictIds[other.id] = true
-      }
-    })
-  })
-
-  const withState = selected.map(screening => ({
-    ...screening,
-    conflict: !!conflictIds[screening.id]
-  }))
-
-  const totalPrice = withState.reduce((sum, item) => sum + (Number(item.price) || 0), 0)
-  const totalMinutes = withState.reduce((sum, item) => sum + (Number(item.duration) || 0), 0)
-
-  return {
-    selected: withState,
-    days: groupByDay(withState),
-    conflictPairs,
-    totalPrice,
-    totalMinutes
-  }
-}
-
 function collectStats(films, selectedIds, marks) {
   const allScreenings = buildScreenings(films, marks)
   const selected = allScreenings.filter(screening => selectedIds.includes(screening.id))
@@ -399,6 +524,7 @@ module.exports = {
   buildPlan,
   buildScreenings,
   collectStats,
+  commuteBetween,
   compactMeta,
   filmAwards,
   filmCast,
@@ -415,6 +541,7 @@ module.exports = {
   filmRuntimeMinutes,
   filmScreeningMeta,
   filmSection,
+  filmSynopsis,
   filmYear,
   findConflicts,
   findFilmScreenings,
@@ -422,6 +549,8 @@ module.exports = {
   findScreening,
   firstText,
   formatRatingCount,
+  getFilmInterest,
+  getFilmMark,
   getInterestMeta,
   groupByDay,
   slashMeta,

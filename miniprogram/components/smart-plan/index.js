@@ -8,6 +8,7 @@ const {
   SMART_MODE_MARKED,
   SMART_MODE_PICK
 } = require('../../utils/smart-plan')
+const { setCurrentTabBarHidden } = require('../../utils/tab-bar')
 
 const app = getApp()
 const TASK_CLASSIFY_INTENT = 'classifyIntent'
@@ -195,11 +196,13 @@ Component({
   lifetimes: {
     detached() {
       this.clearSmartProgress()
+      setCurrentTabBarHidden(false)
     }
   },
 
   methods: {
     open() {
+      setCurrentTabBarHidden(true)
       this.setData({
         smartSheetOpen: true,
         smartInputFocus: false,
@@ -234,7 +237,7 @@ Component({
       if (this.data.smartPlanning) {
         return
       }
-      this.setData({ smartSheetOpen: false, smartInputFocus: false })
+      this.setData({ smartSheetOpen: false, smartInputFocus: false }, () => setCurrentTabBarHidden(false))
     },
 
     focusSmartInput() {
@@ -437,6 +440,7 @@ Component({
         }
         app.setSelectedScreeningIds(result.selectedIds)
         this.setData({ smartSheetOpen: false }, () => {
+          setCurrentTabBarHidden(false)
           this.triggerEvent('planned', { mode, source: parsed.source })
           wx.showToast({
             title: mode === SMART_MODE_PICK && parsed.source === 'ai' ? 'AI已选片' : getSmartToastTitle(instruction, parsed.source),
