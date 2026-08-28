@@ -60,6 +60,12 @@ function writeFieldConfig(config) {
   } catch (error) {}
 }
 
+function screeningIdsFromGroups(groups) {
+  return (Array.isArray(groups) ? groups : []).reduce((ids, group) => {
+    return ids.concat((group && Array.isArray(group.items) ? group.items : []).map(screening => screening.id).filter(Boolean))
+  }, [])
+}
+
 function readStoredViewState() {
   try {
     const state = wx.getStorageSync(VIEW_STATE_KEY)
@@ -523,6 +529,9 @@ Page({
         updates[`screeningGroups[${startIndex + index}]`] = group
       })
       this.setData(updates, () => {
+        if (this.data.fieldConfig && this.data.fieldConfig.popularity) {
+          this.refreshPopularity(screeningIdsFromGroups(groups.slice(startIndex, endIndex)), renderToken)
+        }
         this.queueDeferredGroups(renderToken, groups, endIndex)
       })
     }, PROGRESSIVE_GROUP_DELAY)
@@ -761,7 +770,7 @@ Page({
         this.queueDeferredGroups(renderToken, screeningGroups, initialGroups.length)
       }
       if (this.data.fieldConfig.popularity) {
-        this.refreshPopularity(screenings.map(screening => screening.id), renderToken)
+        this.refreshPopularity(screeningIdsFromGroups(initialGroups), renderToken)
       }
     })
   },

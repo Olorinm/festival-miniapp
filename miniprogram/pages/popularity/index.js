@@ -11,7 +11,6 @@ const app = getApp()
 const INITIAL_LIMIT = 20
 const STEP = 10
 const MAX_LIMIT = 50
-const QUERY_CHUNK_SIZE = 200
 const REFRESH_INTERVAL = 5 * 60 * 1000
 const APP_SHARE_NAME = '赶场愉快'
 const EXPORT_LIMIT_OPTIONS = [
@@ -45,14 +44,6 @@ function formatRankUpdatedAt(value) {
   const hour = String(date.getHours()).padStart(2, '0')
   const minute = String(date.getMinutes()).padStart(2, '0')
   return `${hour}:${minute} 更新`
-}
-
-function chunk(items, size) {
-  const chunks = []
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size))
-  }
-  return chunks
 }
 
 function compareText(a, b) {
@@ -242,7 +233,7 @@ Page({
         Date.now() - this._lastRefreshAt > REFRESH_INTERVAL ||
         !this.data.rows.length
       if (shouldRefresh) {
-        this.refreshPopularity()
+        this.refreshPopularity({ quiet: this.data.rows.length > 0 })
       }
     }).catch(error => {
       console.warn('[popularity] festival data refresh failed', error)
@@ -309,11 +300,13 @@ Page({
     const activeRankType = this.data.activeRankType || 'screening'
     const rankRows = buildRankRowsByType(activeRankType, screenings, counts, MAX_LIMIT)
     const visibleLimit = Math.min(this.data.visibleLimit || INITIAL_LIMIT, MAX_LIMIT)
+    const updatedAtText = formatRankUpdatedAt(app.getScreeningPopularityUpdatedAt && app.getScreeningPopularityUpdatedAt())
     this.setData({
       rows: rankRows.slice(0, visibleLimit),
       canLoadMore: visibleLimit < rankRows.length,
       activeRankLabel: rankLabel(activeRankType),
-      metaText: `来自「${APP_SHARE_NAME}」用户的真实选场数据 · ${this.data.updatedAtText}`
+      updatedAtText,
+      metaText: `来自「${APP_SHARE_NAME}」用户的真实选场数据 · ${updatedAtText}`
     })
   },
 
@@ -345,10 +338,13 @@ Page({
     })
   },
 
-  refreshPopularity() {
+  refreshPopularity(options) {
     if (this.data.loading) {
       return
     }
+    const source = options || {}
+    const force = !!source.force
+    const quiet = !!source.quiet
     const screenings = this.allScreenings()
     const ids = screenings.map(item => item.id)
     if (!ids.length) {
@@ -358,27 +354,28 @@ Page({
 
     const token = Date.now()
     this._refreshToken = token
-    this.setData({
-      loading: true,
-      error: ''
-    })
+    if (!quiet) {
+      this.setData({
+        loading: true,
+        error: ''
+      })
+    } else {
+      this.setData({ error: '' })
+    }
 
-    const chunks = chunk(ids, QUERY_CHUNK_SIZE)
-    const run = chunks.reduce((promise, idsChunk) => {
-      return promise.then(() => app.fetchScreeningPopularity(idsChunk, { force: true }))
-        .then(() => {
-          if (this._refreshToken === token) {
-            this.renderRows()
-          }
-        })
-    }, Promise.resolve())
+    const run = app.fetchScreeningPopularity(ids, { force })
+      .then(() => {
+        if (this._refreshToken === token) {
+          this.renderRows()
+        }
+      })
 
     run.then(() => {
       if (this._refreshToken !== token) {
         return
       }
       this._lastRefreshAt = Date.now()
-      const updatedAtText = formatRankUpdatedAt(Date.now())
+      const updatedAtText = formatRankUpdatedAt(app.getScreeningPopularityUpdatedAt && app.getScreeningPopularityUpdatedAt())
       this.setData({
         loading: false,
         updatedAtText,
@@ -422,10 +419,10 @@ Page({
       visibleLimit: INITIAL_LIMIT
     }, () => {
       this.ensureFreshFestivalData()
-        .then(() => this.refreshPopularity())
+        .then(() => this.refreshPopularity({ force: true }))
         .catch(error => {
           console.warn('[popularity] refresh data failed', error)
-          this.refreshPopularity()
+          this.refreshPopularity({ force: true })
         })
     })
   },

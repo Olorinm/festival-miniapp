@@ -9,7 +9,8 @@ const STORAGE_KEYS = {
   selectedScreeningIds: 'festival.selectedScreeningIds',
   filmMarks: 'festival.filmMarks',
   planSchemes: 'festival.planSchemes',
-  activePlanSchemeId: 'festival.activePlanSchemeId'
+  activePlanSchemeId: 'festival.activePlanSchemeId',
+  screeningPopularityCache: 'festival.screeningPopularityCache.v1'
 }
 
 const DEFAULT_PLAN_SCHEME_ID = 'plan_default'
@@ -18,6 +19,7 @@ const FESTIVAL_DATA_REFRESH_INTERVAL = 30 * 60 * 1000
 const FESTIVAL_DATA_CACHE_CHUNK_SIZE = 320 * 1024
 const POPULARITY_FETCH_CACHE_TTL = 5 * 60 * 1000
 const POPULARITY_FETCH_CHUNK_SIZE = 500
+const POPULARITY_FETCH_BATCH_DELAY = 120
 const SCHEDULE_FIELD_CONFIG_KEY = 'festival.scheduleFieldConfig'
 
 function isValidFestivalData(data) {
@@ -279,6 +281,42 @@ function normalizePlanNotes(notes, selectedIds) {
   }, {})
 }
 
+function normalizePopularityCountMap(counts, allowedIds) {
+  const source = counts && typeof counts === 'object' ? counts : {}
+  const allowed = allowedIds && allowedIds.length
+    ? allowedIds.reduce((map, id) => {
+      map[id] = true
+      return map
+    }, {})
+    : null
+  return Object.keys(source).reduce((next, id) => {
+    const key = String(id || '').trim()
+    if (!key || (allowed && !allowed[key])) {
+      return next
+    }
+    const value = Math.max(0, Math.floor(Number(source[id]) || 0))
+    if (value > 0) {
+      next[key] = value
+    }
+    return next
+  }, {})
+}
+
+function readScreeningPopularityCache() {
+  try {
+    const cache = wx.getStorageSync(STORAGE_KEYS.screeningPopularityCache)
+    return cache && typeof cache === 'object' ? cache : null
+  } catch (error) {
+    return null
+  }
+}
+
+function writeScreeningPopularityCache(cache) {
+  try {
+    wx.setStorageSync(STORAGE_KEYS.screeningPopularityCache, cache)
+  } catch (error) {}
+}
+
 function readScreeningPopularityEnabled() {
   try {
     const config = wx.getStorageSync(SCHEDULE_FIELD_CONFIG_KEY)
@@ -379,6 +417,7 @@ App({
     filmMarks: {},
     filmViewState: {},
     screeningPopularity: {},
+    screeningPopularityUpdatedAt: 0,
     smartPlanMeta: null,
     communityConfig: normalizeCommunityConfig(null)
   },
@@ -429,12 +468,15 @@ App({
       this.globalData.activePlanSchemeId = activePlanSchemeId || (this.globalData.planSchemes[0] && this.globalData.planSchemes[0].id) || DEFAULT_PLAN_SCHEME_ID
       this.syncActivePlanFromSchemes()
       this.globalData.filmMarks = filmMarks && typeof filmMarks === 'object' ? filmMarks : {}
+      this.restoreScreeningPopularityCache()
       this.pruneLocalState()
     } catch (error) {
       this.globalData.selectedScreeningIds = []
       this.globalData.planSchemes = normalizePlanSchemes([], [])
       this.globalData.activePlanSchemeId = DEFAULT_PLAN_SCHEME_ID
       this.globalData.filmMarks = {}
+      this.globalData.screeningPopularity = {}
+      this.globalData.screeningPopularityUpdatedAt = 0
     }
   },
 
@@ -457,6 +499,7 @@ App({
     if (meta && meta.community) {
       this.globalData.communityConfig = normalizeCommunityConfig(meta.community)
     }
+    this.restoreScreeningPopularityCache({ preserveExisting: true })
     if (!options || options.skipPrune !== true) {
       this.pruneLocalState()
     }
@@ -942,6 +985,83 @@ App({
     return String(meta.id || meta.slug || meta.name || this.globalData.festivalDataVersion || 'current')
   },
 
+  getFestivalDataVersion() {
+    const meta = this.globalData.festivalMeta || {}
+    return String(this.globalData.festivalDataVersion || meta.dataVersion || '')
+  },
+
+  getAllFestivalScreeningIds() {
+    const ids = []
+    ;(this.globalData.films || []).forEach(film => {
+      ;(film.screenings || []).forEach(screening => {
+        if (screening && screening.id) {
+          ids.push(screening.id)
+        }
+      })
+    })
+    return uniqueIds(ids)
+  },
+
+  restoreScreeningPopularityCache(options) {
+    const cache = readScreeningPopularityCache()
+    const festivalId = this.getFestivalPopularityId()
+    const cachedFestivalId = String(cache && cache.festivalId || '')
+    if (!cache || cachedFestivalId !== festivalId) {
+      return false
+    }
+
+    const allowedIds = this.getAllFestivalScreeningIds()
+    const counts = normalizePopularityCountMap(cache.counts, allowedIds)
+    const fetchedAt = normalizeTimestamp(cache.fetchedAt || cache.updatedAt)
+    if (!Object.keys(counts).length || !fetchedAt) {
+      return false
+    }
+
+    const preserveExisting = !!(options && options.preserveExisting)
+    this.globalData.screeningPopularity = preserveExisting
+      ? Object.assign({}, counts, this.globalData.screeningPopularity || {})
+      : counts
+    this.globalData.screeningPopularityUpdatedAt = Math.max(
+      Number(this.globalData.screeningPopularityUpdatedAt) || 0,
+      fetchedAt
+    )
+    this._screeningPopularityFetchedAt = this._screeningPopularityFetchedAt || {}
+    Object.keys(counts).forEach(id => {
+      this._screeningPopularityFetchedAt[id] = Math.max(
+        Number(this._screeningPopularityFetchedAt[id]) || 0,
+        fetchedAt
+      )
+    })
+    return true
+  },
+
+  writeScreeningPopularityCacheNow() {
+    if (this._screeningPopularityCacheTimer) {
+      clearTimeout(this._screeningPopularityCacheTimer)
+      this._screeningPopularityCacheTimer = null
+    }
+    const counts = normalizePopularityCountMap(
+      this.globalData.screeningPopularity || {},
+      this.getAllFestivalScreeningIds()
+    )
+    writeScreeningPopularityCache({
+      festivalId: this.getFestivalPopularityId(),
+      dataVersion: this.getFestivalDataVersion(),
+      fetchedAt: this.globalData.screeningPopularityUpdatedAt || Date.now(),
+      updatedAt: Date.now(),
+      counts
+    })
+  },
+
+  queueScreeningPopularityCacheWrite(delay) {
+    if (this._screeningPopularityCacheTimer) {
+      clearTimeout(this._screeningPopularityCacheTimer)
+    }
+    this._screeningPopularityCacheTimer = setTimeout(() => {
+      this.writeScreeningPopularityCacheNow()
+    }, Number.isFinite(delay) ? delay : 300)
+  },
+
   getCurrentFestivalDataSnapshot() {
     return {
       festivalMeta: Object.assign({}, this.globalData.festivalMeta || {}, {
@@ -993,14 +1113,35 @@ App({
     }))
   },
 
-  mergeScreeningPopularity(counts) {
+  mergeScreeningPopularity(counts, options) {
     const next = Object.assign({}, this.globalData.screeningPopularity || {})
+    let changed = false
     Object.keys(counts || {}).forEach(id => {
       const count = Number(counts[id])
-      next[id] = Number.isFinite(count) && count > 0 ? count : 0
+      const value = Number.isFinite(count) && count > 0 ? count : 0
+      if (next[id] !== value) {
+        changed = true
+      }
+      next[id] = value
     })
     this.globalData.screeningPopularity = next
+    if (Object.keys(counts || {}).length) {
+      this.globalData.screeningPopularityUpdatedAt = Date.now()
+      if (options && options.markFetched) {
+        this._screeningPopularityFetchedAt = this._screeningPopularityFetchedAt || {}
+        Object.keys(counts || {}).forEach(id => {
+          this._screeningPopularityFetchedAt[id] = this.globalData.screeningPopularityUpdatedAt
+        })
+      }
+      if (changed || (options && options.persist !== false)) {
+        this.queueScreeningPopularityCacheWrite()
+      }
+    }
     return next
+  },
+
+  getScreeningPopularityUpdatedAt() {
+    return Number(this.globalData.screeningPopularityUpdatedAt) || 0
   },
 
   getScreeningPopularityMap(screeningIds) {
@@ -1074,7 +1215,7 @@ App({
       }).then(res => {
         const result = res && res.result
         if (result && result.ok) {
-          return this.mergeScreeningPopularity(result.counts)
+          return this.mergeScreeningPopularity(result.counts, { markFetched: true })
         }
         return this.globalData.screeningPopularity || {}
       }).catch(error => {
@@ -1134,14 +1275,80 @@ App({
     if (!idsToFetch.length) {
       return Promise.resolve(force ? readMap() : this.getScreeningPopularityMap(ids))
     }
+
+    if (!force) {
+      return this.queueScreeningPopularityFetch(idsToFetch).then(() => this.getScreeningPopularityMap(ids))
+    }
+
+    return this.fetchScreeningPopularityIds(idsToFetch, { force }).then(() => readMap())
+  },
+
+  queueScreeningPopularityFetch(ids) {
+    const idsToFetch = uniqueIds(ids)
+    if (!idsToFetch.length) {
+      return Promise.resolve(this.globalData.screeningPopularity || {})
+    }
+    if (!this._screeningPopularityFetchBatch) {
+      this._screeningPopularityFetchBatch = {
+        ids: {},
+        requests: [],
+        timer: null
+      }
+    }
+    const batch = this._screeningPopularityFetchBatch
+    idsToFetch.forEach(id => {
+      batch.ids[id] = true
+    })
+    const promise = new Promise(resolve => {
+      batch.requests.push({
+        ids: idsToFetch,
+        resolve
+      })
+    })
+    if (batch.timer) {
+      clearTimeout(batch.timer)
+    }
+    batch.timer = setTimeout(() => {
+      this.flushScreeningPopularityFetchBatch()
+    }, POPULARITY_FETCH_BATCH_DELAY)
+    return promise
+  },
+
+  flushScreeningPopularityFetchBatch() {
+    const batch = this._screeningPopularityFetchBatch
+    if (!batch) {
+      return
+    }
+    this._screeningPopularityFetchBatch = null
+    if (batch.timer) {
+      clearTimeout(batch.timer)
+    }
+    const ids = Object.keys(batch.ids)
+    const run = this.fetchScreeningPopularityIds(ids)
+    run.then(() => {
+      batch.requests.forEach(request => {
+        request.resolve(this.getScreeningPopularityMap(request.ids))
+      })
+    }, () => {
+      batch.requests.forEach(request => {
+        request.resolve(this.getScreeningPopularityMap(request.ids))
+      })
+    })
+  },
+
+  fetchScreeningPopularityIds(ids, options) {
+    const idsToFetch = uniqueIds(ids)
+    if (!idsToFetch.length) {
+      return Promise.resolve(this.globalData.screeningPopularity || {})
+    }
     const chunks = []
     for (let index = 0; index < idsToFetch.length; index += POPULARITY_FETCH_CHUNK_SIZE) {
       chunks.push(idsToFetch.slice(index, index + POPULARITY_FETCH_CHUNK_SIZE))
     }
     return chunks.reduce((promise, idsChunk) => {
-      return promise.then(() => this.fetchScreeningPopularityChunk(idsChunk, { force }))
+      return promise.then(() => this.fetchScreeningPopularityChunk(idsChunk, options || {}))
     }, Promise.resolve()).then(() => {
-      return force ? readMap() : this.getScreeningPopularityMap(ids)
+      return this.globalData.screeningPopularity || {}
     })
   },
 
@@ -1167,11 +1374,13 @@ App({
       const result = res && res.result
       if (result && result.ok) {
         const now = Date.now()
-        this.mergeScreeningPopularity(result.counts)
+        this.mergeScreeningPopularity(result.counts, { persist: false })
         this._screeningPopularityFetchedAt = this._screeningPopularityFetchedAt || {}
         idsChunk.forEach(id => {
           this._screeningPopularityFetchedAt[id] = now
         })
+        this.globalData.screeningPopularityUpdatedAt = now
+        this.queueScreeningPopularityCacheWrite()
       }
       return this.globalData.screeningPopularity || {}
     }).catch(error => {

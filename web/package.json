@@ -1,5 +1,6 @@
 {
   "name": "festival-miniapp-web",
+  "packageManager": "npm@10.9.8",
   "version": "0.1.0",
   "private": true,
   "scripts": {

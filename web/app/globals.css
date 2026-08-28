@@ -821,19 +821,56 @@ a {
   line-height: 1;
 }
 
+.popularity-rank-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 252px);
+  height: 34px;
+  margin-top: 14px;
+  padding: 3px;
+  border: 1px solid #ecece8;
+  border-radius: 9px;
+  background: #f6f6f3;
+}
+
+.popularity-rank-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border-radius: 6px;
+  color: #777b74;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.popularity-rank-tab.is-active {
+  background: #171917;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(23, 25, 23, 0.12);
+}
+
 .popularity-meta {
   margin-top: 12px;
-  padding-right: 70px;
+  padding-right: 110px;
   color: #9a9a90;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
 }
 
-.popularity-refresh {
+.popularity-hero-actions {
   position: absolute;
   right: 2px;
   bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popularity-export,
+.popularity-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -852,6 +889,7 @@ a {
   color: #858982;
 }
 
+.popularity-export svg,
 .popularity-refresh svg {
   width: 12px;
   height: 12px;
@@ -891,6 +929,14 @@ a {
   padding: 15px 2px;
   border-bottom: 1px solid #ededea;
   text-align: left;
+}
+
+.popularity-row.is-static {
+  cursor: default;
+}
+
+.popularity-row.is-no-poster .popularity-info {
+  padding-left: 2px;
 }
 
 .popularity-rank {
@@ -2100,6 +2146,54 @@ a {
   margin-top: 8px;
   border-bottom: 0;
   background: #ffffff;
+}
+
+.rank-export-sheet {
+  width: min(100%, var(--miniapp-width));
+  padding: 9px 15px max(17px, env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: #eef0f2;
+  box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.14);
+}
+
+.rank-export-title {
+  color: #171917;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rank-export-meta {
+  margin-top: 7px;
+  color: #7b8179;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rank-export-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.rank-export-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #3d453f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.rank-export-option.is-picked {
+  border-color: #171917;
+  background: #171917;
+  color: #ffffff;
 }
 
 .poster-export-panel {

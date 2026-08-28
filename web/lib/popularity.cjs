@@ -283,6 +283,14 @@ function hmgetValue(values, id, index) {
   return undefined
 }
 
+function shouldIncludeSetCounts(payload) {
+  return !!(
+    payload &&
+    payload.includeSetCounts === true &&
+    String(process.env.POPULARITY_INCLUDE_SET_COUNTS || '') === '1'
+  )
+}
+
 async function redisSync(payload) {
   const redis = getRedis()
   if (!redis) {
@@ -366,6 +374,7 @@ async function redisGet(payload) {
   const festivalId = normalizeFestivalId(payload.festivalId)
   const screeningIds = uniqueIds(payload.screeningIds, MAX_QUERY_IDS)
   const filmIds = uniqueIds(payload.filmIds, MAX_QUERY_IDS)
+  const includeSetCounts = shouldIncludeSetCounts(payload)
   const pipeline = redis.pipeline()
   if (screeningIds.length) {
     pipeline.hmget(screeningCountKey(festivalId), ...screeningIds)
@@ -373,8 +382,10 @@ async function redisGet(payload) {
   if (filmIds.length) {
     pipeline.hmget(filmCountKey(festivalId), ...filmIds)
   }
-  screeningIds.forEach(id => pipeline.scard(screeningKey(festivalId, id)))
-  filmIds.forEach(id => pipeline.scard(filmKey(festivalId, id)))
+  if (includeSetCounts) {
+    screeningIds.forEach(id => pipeline.scard(screeningKey(festivalId, id)))
+    filmIds.forEach(id => pipeline.scard(filmKey(festivalId, id)))
+  }
   let result
   try {
     result = await pipeline.exec()
@@ -395,15 +406,23 @@ async function redisGet(payload) {
   const filmHashValues = filmIds.length ? result[resultIndex++] : []
   screeningIds.forEach((id, index) => {
     const hashCount = Math.max(0, Number(hmgetValue(screeningHashValues, id, index)) || 0)
-    const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
-    screeningCounts[id] = Math.max(hashCount, setCount)
+    if (includeSetCounts) {
+      const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
+      screeningCounts[id] = Math.max(hashCount, setCount)
+    } else {
+      screeningCounts[id] = hashCount
+    }
   })
   filmIds.forEach((id, index) => {
     const hashCount = Math.max(0, Number(hmgetValue(filmHashValues, id, index)) || 0)
-    const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
-    filmCounts[id] = Math.max(hashCount, setCount)
+    if (includeSetCounts) {
+      const setCount = Math.max(0, Number(result[resultIndex++]) || 0)
+      filmCounts[id] = Math.max(hashCount, setCount)
+    } else {
+      filmCounts[id] = hashCount
+    }
   })
-  return { screeningCounts, filmCounts, stored: 'redis' }
+  return { screeningCounts, filmCounts, stored: 'redis', countSource: includeSetCounts ? 'hash_set_max' : 'hash' }
 }
 
 async function readWechatCache(festivalId) {

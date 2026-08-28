@@ -5,6 +5,13 @@ const cloud = require('wx-server-sdk')
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
+const db = cloud.database()
+const _ = db.command
+const RATE_LIMIT_COLLECTION = 'ai_parse_rate_limit'
+const AI_RATE_LIMIT_MINUTE = Number(process.env.AI_PARSE_RATE_LIMIT_MINUTE || 8)
+const AI_RATE_LIMIT_HOUR = Number(process.env.AI_PARSE_RATE_LIMIT_HOUR || 40)
+let rateLimitCollectionReady = false
+
 let localEnvCache = null
 
 function readLocalEnv() {
@@ -741,6 +748,72 @@ function maxTokensForTask(task, filmCount) {
   return 400
 }
 
+function docSafe(value) {
+  return String(value || '').trim().replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'anonymous'
+}
+
+async function ensureRateLimitCollection() {
+  if (rateLimitCollectionReady) {
+    return
+  }
+  try {
+    await db.createCollection(RATE_LIMIT_COLLECTION)
+  } catch (error) {}
+  rateLimitCollectionReady = true
+}
+
+async function takeRateLimit(openid, windowName, bucket, limit) {
+  const id = `ai_parse__${docSafe(openid)}__${windowName}__${bucket}`
+  const collection = db.collection(RATE_LIMIT_COLLECTION)
+  let current = null
+  try {
+    const res = await collection.doc(id).get()
+    current = res && res.data || null
+  } catch (error) {}
+  const count = Math.max(0, Number(current && current.count) || 0)
+  if (count >= limit) {
+    return false
+  }
+  const data = {
+    openid: docSafe(openid),
+    windowName,
+    bucket,
+    count: _.inc(1),
+    updatedAt: Date.now()
+  }
+  try {
+    await collection.doc(id).update({ data })
+  } catch (error) {
+    try {
+      await collection.doc(id).set({
+        data: Object.assign({}, data, { count: 1, createdAt: Date.now() })
+      })
+    } catch (setError) {
+      return true
+    }
+  }
+  return true
+}
+
+async function checkAiRateLimit(openid) {
+  if (!openid) {
+    return { ok: true }
+  }
+  await ensureRateLimitCollection()
+  const now = Date.now()
+  const minuteBucket = Math.floor(now / 60000)
+  const hourBucket = Math.floor(now / 3600000)
+  const minuteOk = await takeRateLimit(openid, 'minute', minuteBucket, AI_RATE_LIMIT_MINUTE)
+  if (!minuteOk) {
+    return { ok: false, errorCode: 'rate_limited_minute' }
+  }
+  const hourOk = await takeRateLimit(openid, 'hour', hourBucket, AI_RATE_LIMIT_HOUR)
+  if (!hourOk) {
+    return { ok: false, errorCode: 'rate_limited_hour' }
+  }
+  return { ok: true }
+}
+
 exports.main = async event => {
   const instruction = String((event && event.instruction) || '').trim().slice(0, 500)
   const task = normalizeTask(event && event.task)
@@ -752,6 +825,16 @@ exports.main = async event => {
   const hasMarkedFilms = !!(event && event.hasMarkedFilms)
   if (!instruction) {
     return Object.assign(fallbackForTask(task, { hasMarkedFilms }), { source: 'script' })
+  }
+
+  const wxContext = cloud.getWXContext ? cloud.getWXContext() : {}
+  const rateLimit = await checkAiRateLimit(wxContext && wxContext.OPENID)
+  if (!rateLimit.ok) {
+    return Object.assign(fallbackForTask(task, { hasMarkedFilms }), {
+      source: 'fallback',
+      errorCode: rateLimit.errorCode,
+      debug: { code: rateLimit.errorCode }
+    })
   }
 
   const providers = chatProviders()

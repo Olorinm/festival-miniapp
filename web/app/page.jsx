@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpToLine, ChevronDown, ChevronRight, Maximize2, Minimize2, PencilLine, RefreshCw } from 'lucide-react'
+import { ArrowUpToLine, ChevronDown, ChevronRight, Download, Maximize2, Minimize2, PencilLine, RefreshCw } from 'lucide-react'
 import festival from '../lib/festival'
 import schedule from '../lib/schedule.cjs'
 import { createTicketPosterImage } from '../lib/ticketPoster'
@@ -50,9 +50,20 @@ const MINIAPP_QR_SRC = '/miniapp/qr.png'
 const MINIAPP_ANNOUNCEMENT_STORAGE_KEY = `${STORAGE_PREFIX}miniappAnnouncement.20260624.dismissed`
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const POPULARITY_RANK_REFRESH_MS = 5 * 60 * 1000
+const POPULARITY_SNAPSHOT_STORAGE_KEY = 'popularitySnapshot.v1'
 const POPULARITY_RANK_INITIAL_LIMIT = 20
 const POPULARITY_RANK_STEP = 10
 const POPULARITY_RANK_MAX_LIMIT = 50
+const POPULARITY_RANK_TABS = [
+  { key: 'screening', label: '场次榜' },
+  { key: 'film', label: '影片榜' },
+  { key: 'cinema', label: '影院榜' }
+]
+const POPULARITY_EXPORT_LIMIT_OPTIONS = [
+  { limit: 10, label: '前 10' },
+  { limit: 20, label: '前 20' },
+  { limit: 50, label: '前 50' }
+]
 const POSTER_THEMES = [
   {
     key: 'list',
@@ -194,6 +205,40 @@ function useStoredState(key, fallback) {
   }, [key, value])
 
   return [value, setValue]
+}
+
+function normalizePopularityCounts(counts, validIds, options) {
+  const source = counts && typeof counts === 'object' ? counts : {}
+  const keepZero = !!(options && options.keepZero)
+  const validMap = validIds && typeof validIds === 'object' ? validIds : null
+  return Object.keys(source).reduce((next, id) => {
+    const key = String(id || '').trim()
+    if (!key || (validMap && !validMap[key])) return next
+    const value = Math.max(0, Math.floor(Number(source[id]) || 0))
+    if (value > 0 || keepZero) next[key] = value
+    return next
+  }, {})
+}
+
+function readPopularitySnapshot(festivalId, validIds) {
+  const snapshot = safeRead(POPULARITY_SNAPSHOT_STORAGE_KEY, null)
+  if (!snapshot || snapshot.festivalId !== festivalId) {
+    return { counts: {}, fetchedAt: 0 }
+  }
+  const fetchedAt = Math.max(0, Number(snapshot.fetchedAt || snapshot.updatedAt) || 0)
+  return {
+    counts: normalizePopularityCounts(snapshot.counts, validIds),
+    fetchedAt
+  }
+}
+
+function writePopularitySnapshot(festivalId, counts, fetchedAt) {
+  safeWrite(POPULARITY_SNAPSHOT_STORAGE_KEY, {
+    festivalId,
+    fetchedAt: fetchedAt || Date.now(),
+    updatedAt: Date.now(),
+    counts: normalizePopularityCounts(counts)
+  })
 }
 
 function uniqueIds(ids) {
@@ -509,16 +554,124 @@ function formatRankUpdatedAt(value) {
   return `截至 ${hour}:${minute}`
 }
 
-function buildPopularityRows(screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
+function runtimeLabel(minutes) {
+  const value = Math.round(Number(minutes) || 0)
+  if (value <= 0) return ''
+  return `${Math.floor(value / 60)}小时${value % 60}分`
+}
+
+function rankifyPopularityRows(rows, limit) {
+  return rows
+    .filter(item => item.popularityCount > 0)
+    .sort((a, b) => {
+      return b.popularityCount - a.popularityCount ||
+        compareText(a.sortDate || '', b.sortDate || '') ||
+        (a.sortMinutes || 0) - (b.sortMinutes || 0) ||
+        compareText(a.cnTitle, b.cnTitle)
+    })
+    .slice(0, limit)
+}
+
+function buildScreeningPopularityRows(screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
   const countMap = counts && typeof counts === 'object' ? counts : {}
-  return (Array.isArray(screenings) ? screenings : [])
+  return rankifyPopularityRows((Array.isArray(screenings) ? screenings : [])
     .map(item => ({
       ...item,
-      popularityCount: Math.max(0, Number(countMap[item.id]) || 0)
-    }))
-    .filter(item => item.popularityCount > 0)
-    .sort((a, b) => b.popularityCount - a.popularityCount || compareText(a.date || '', b.date || '') || (a.startMinutes || 0) - (b.startMinutes || 0) || compareText(a.cnTitle, b.cnTitle))
-    .slice(0, limit)
+      popularityCount: Math.max(0, Number(countMap[item.id]) || 0),
+      primaryMeta: compact([item.dayLabel, item.timeRange]),
+      secondaryMeta: formatVenueLine(item),
+      sortDate: item.date,
+      sortMinutes: item.startMinutes,
+      rankType: 'screening'
+    })), limit)
+}
+
+function buildFilmPopularityRows(screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
+  const countMap = counts && typeof counts === 'object' ? counts : {}
+  const grouped = {}
+  ;(Array.isArray(screenings) ? screenings : []).forEach(item => {
+    const count = Math.max(0, Number(countMap[item.id]) || 0)
+    if (count <= 0) return
+    const key = item.filmId || item.cnTitle
+    if (!grouped[key]) {
+      grouped[key] = {
+        id: `film:${key}`,
+        filmId: item.filmId,
+        cnTitle: item.cnTitle,
+        posterSrc: item.posterSrc,
+        posterText: String(item.cnTitle || '').replace(/\s*\(4K\)/, ''),
+        popularityCount: 0,
+        screeningCount: 0,
+        sortDate: item.date,
+        sortMinutes: item.startMinutes,
+        primaryMeta: compact([item.year, item.country, runtimeLabel(item.runtime)]),
+        secondaryMeta: '',
+        rankType: 'film'
+      }
+    }
+    const row = grouped[key]
+    row.popularityCount += count
+    row.screeningCount += 1
+    row.sortDate = compareText(item.date, row.sortDate) < 0 ? item.date : row.sortDate
+    row.sortMinutes = Math.min(row.sortMinutes || item.startMinutes || 0, item.startMinutes || 0)
+  })
+  Object.keys(grouped).forEach(key => {
+    const row = grouped[key]
+    row.secondaryMeta = `${row.screeningCount} 个热门场次`
+  })
+  return rankifyPopularityRows(Object.keys(grouped).map(key => grouped[key]), limit)
+}
+
+function buildCinemaPopularityRows(screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
+  const countMap = counts && typeof counts === 'object' ? counts : {}
+  const grouped = {}
+  ;(Array.isArray(screenings) ? screenings : []).forEach(item => {
+    const count = Math.max(0, Number(countMap[item.id]) || 0)
+    if (count <= 0) return
+    const cinema = String(item.cinema || '').trim() || '未标注影院'
+    if (!grouped[cinema]) {
+      grouped[cinema] = {
+        id: `cinema:${cinema}`,
+        cnTitle: cinema,
+        posterText: '影院',
+        popularityCount: 0,
+        screeningCount: 0,
+        filmTitles: [],
+        filmTitleMap: {},
+        sortDate: item.date,
+        sortMinutes: item.startMinutes,
+        primaryMeta: '',
+        secondaryMeta: '',
+        hidePoster: true,
+        rankType: 'cinema'
+      }
+    }
+    const row = grouped[cinema]
+    row.popularityCount += count
+    row.screeningCount += 1
+    if (item.cnTitle && !row.filmTitleMap[item.cnTitle]) {
+      row.filmTitleMap[item.cnTitle] = true
+      row.filmTitles.push(item.cnTitle)
+    }
+    row.sortDate = compareText(item.date, row.sortDate) < 0 ? item.date : row.sortDate
+    row.sortMinutes = Math.min(row.sortMinutes || item.startMinutes || 0, item.startMinutes || 0)
+  })
+  Object.keys(grouped).forEach(key => {
+    const row = grouped[key]
+    row.primaryMeta = `${row.screeningCount} 个热门场次`
+    row.secondaryMeta = row.filmTitles.slice(0, 3).join('、')
+  })
+  return rankifyPopularityRows(Object.keys(grouped).map(key => grouped[key]), limit)
+}
+
+function buildPopularityRows(type, screenings, counts, limit = POPULARITY_RANK_INITIAL_LIMIT) {
+  if (type === 'film') return buildFilmPopularityRows(screenings, counts, limit)
+  if (type === 'cinema') return buildCinemaPopularityRows(screenings, counts, limit)
+  return buildScreeningPopularityRows(screenings, counts, limit)
+}
+
+function popularityRankLabel(type) {
+  return POPULARITY_RANK_TABS.find(item => item.key === type)?.label || '场次榜'
 }
 
 function hasPositivePopularityCounts(counts) {
@@ -1209,6 +1362,262 @@ async function createPlanPosterImage(plan, options) {
       filename: `${options.festivalName || 'festival'}-plan.png`,
       width: poster.width,
       height: poster.height
+    }
+  } catch (error) {
+    return null
+  }
+}
+
+const POPULARITY_POSTER_WIDTH = 750
+const POPULARITY_POSTER_PAD_X = 36
+const POPULARITY_POSTER_HEADER_H = 170
+const POPULARITY_POSTER_ROW_H = 168
+const POPULARITY_POSTER_FOOTER_H = 70
+const POPULARITY_POSTER_COLORS = {
+  bg: '#ffffff',
+  ink: '#161614',
+  brand: '#171715',
+  muted: '#9a9a90',
+  body: '#6f6f67',
+  line: '#ededea',
+  rank: '#cfcec8',
+  top: '#3f5b73',
+  bar: '#c9c8c1',
+  barBg: '#ecece8',
+  badge: '#171917',
+  placeholder: '#e3e4de'
+}
+
+function setPopularityPosterText(ctx, size, color, weight, options) {
+  const style = options && options.italic ? 'italic ' : ''
+  ctx.fillStyle = color
+  ctx.font = `${style}${canvasFontWeight(weight)} ${size}px ${POSTER_FONT_FAMILY}`
+}
+
+function truncateCanvasText(ctx, text, maxWidth) {
+  const value = String(text || '')
+  if (!value || ctx.measureText(value).width <= maxWidth) return value
+  let lo = 0
+  let hi = value.length
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (ctx.measureText(`${value.slice(0, mid)}...`).width <= maxWidth) lo = mid
+    else hi = mid - 1
+  }
+  return lo > 0 ? `${value.slice(0, lo)}...` : '...'
+}
+
+function wrapPopularityPosterLines(ctx, text, maxWidth, maxLines) {
+  const value = String(text || '').trim()
+  if (!value) return []
+  const chars = Array.from(value)
+  const lines = []
+  let line = ''
+  chars.forEach(char => {
+    const next = line + char
+    if (!line || ctx.measureText(next).width <= maxWidth) {
+      line = next
+      return
+    }
+    lines.push(line)
+    line = char
+  })
+  if (line) lines.push(line)
+  if (!maxLines || lines.length <= maxLines) return lines
+  const kept = lines.slice(0, maxLines)
+  kept[maxLines - 1] = truncateCanvasText(ctx, kept[maxLines - 1] + lines.slice(maxLines).join(''), maxWidth)
+  return kept
+}
+
+function drawPopularityWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const lines = wrapPopularityPosterLines(ctx, text, maxWidth, maxLines)
+  lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight))
+}
+
+function popularityPosterSources(item) {
+  const source = Array.isArray(item && item.posterSrcs) ? item.posterSrcs : [item && item.posterSrc]
+  const seen = {}
+  return source
+    .map(src => String(src || '').trim())
+    .filter(Boolean)
+    .filter(src => {
+      if (seen[src]) return false
+      seen[src] = true
+      return true
+    })
+}
+
+function popularityPosterKey(item) {
+  return popularityPosterSources(item)[0] || ''
+}
+
+async function hydratePopularityPosterImages(rows) {
+  const posters = {}
+  await Promise.all((rows || []).map(async item => {
+    const key = popularityPosterKey(item)
+    if (!key || posters[key] !== undefined) return
+    posters[key] = await loadPosterImage(key)
+  }))
+  return posters
+}
+
+function drawPopularityPosterCover(ctx, image, x, y, width, height) {
+  const sourceWidth = image && (image.naturalWidth || image.width)
+  const sourceHeight = image && (image.naturalHeight || image.height)
+  if (!sourceWidth || !sourceHeight) return false
+  const scale = Math.max(width / sourceWidth, height / sourceHeight)
+  const cropWidth = width / scale
+  const cropHeight = height / scale
+  const sourceX = Math.max(0, (sourceWidth - cropWidth) / 2)
+  const sourceY = Math.max(0, (sourceHeight - cropHeight) / 2)
+  ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, x, y, width, height)
+  return true
+}
+
+function drawPopularityPosterImage(ctx, item, image, x, y, width, height) {
+  ctx.save()
+  drawRoundRect(ctx, x, y, width, height, 12)
+  ctx.clip()
+  if (!drawPopularityPosterCover(ctx, image, x, y, width, height)) {
+    ctx.fillStyle = POPULARITY_POSTER_COLORS.placeholder
+    ctx.fillRect(x, y, width, height)
+    setPopularityPosterText(ctx, 20, '#9a9f96', '700')
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const lines = wrapPopularityPosterLines(ctx, String(item.cnTitle || '').replace(/\s*\(4K\)/, ''), width * 0.72, 2)
+    lines.forEach((line, index) => {
+      ctx.fillText(line, x + width / 2, y + height / 2 + (index - (lines.length - 1) / 2) * 24)
+    })
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+  }
+  ctx.restore()
+}
+
+function drawPopularityPosterHeader(ctx, spec) {
+  const colors = POPULARITY_POSTER_COLORS
+  ctx.fillStyle = colors.bg
+  ctx.fillRect(0, 0, POPULARITY_POSTER_WIDTH, spec.height)
+
+  ctx.beginPath()
+  ctx.arc(POPULARITY_POSTER_PAD_X + 6, 31, 6, 0, Math.PI * 2)
+  ctx.fillStyle = colors.brand
+  ctx.fill()
+
+  setPopularityPosterText(ctx, 22, '#777d75', '600')
+  ctx.fillText(APP_SHARE_NAME, POPULARITY_POSTER_PAD_X + 24, 39)
+
+  setPopularityPosterText(ctx, 44, '#171917', '750')
+  const title = spec.festivalName || '28th SIFF'
+  ctx.fillText(title, POPULARITY_POSTER_PAD_X, 93)
+  const titleWidth = ctx.measureText(title).width
+
+  const badgeX = POPULARITY_POSTER_PAD_X + titleWidth + 16
+  const badgeText = spec.rankLabel || '热度榜'
+  setPopularityPosterText(ctx, 18, '#ffffff', '700')
+  const badgeW = Math.max(80, Math.ceil(ctx.measureText(badgeText).width) + 26)
+  fillRoundRect(ctx, badgeX, 63, badgeW, 32, 16, colors.badge)
+  setPopularityPosterText(ctx, 18, '#ffffff', '700')
+  ctx.fillText(badgeText, badgeX + 13, 85)
+
+  setPopularityPosterText(ctx, 22, '#858982', '500')
+  drawPopularityWrappedText(ctx, spec.metaText || '', POPULARITY_POSTER_PAD_X, 126, 520, 28, 2)
+
+  ctx.strokeStyle = colors.line
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(POPULARITY_POSTER_PAD_X, POPULARITY_POSTER_HEADER_H - 1)
+  ctx.lineTo(POPULARITY_POSTER_WIDTH - POPULARITY_POSTER_PAD_X, POPULARITY_POSTER_HEADER_H - 1)
+  ctx.stroke()
+}
+
+function drawPopularityPosterRow(ctx, item, index, maxCount, posters) {
+  const colors = POPULARITY_POSTER_COLORS
+  const y = POPULARITY_POSTER_HEADER_H + index * POPULARITY_POSTER_ROW_H
+  const centerY = y + POPULARITY_POSTER_ROW_H / 2
+  const isTop = index < 3
+
+  ctx.strokeStyle = colors.line
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(POPULARITY_POSTER_PAD_X, y + POPULARITY_POSTER_ROW_H)
+  ctx.lineTo(POPULARITY_POSTER_WIDTH - POPULARITY_POSTER_PAD_X, y + POPULARITY_POSTER_ROW_H)
+  ctx.stroke()
+
+  setPopularityPosterText(ctx, 58, isTop ? colors.top : colors.rank, '800', { italic: true })
+  ctx.textAlign = 'center'
+  ctx.fillText(String(index + 1), POPULARITY_POSTER_PAD_X + 32, centerY + 19)
+  ctx.textAlign = 'left'
+
+  const posterX = POPULARITY_POSTER_PAD_X + 78
+  const posterY = y + 24
+  const posterWidth = item.hidePoster ? 0 : 78
+  const posterHeight = 114
+  if (!item.hidePoster) {
+    drawPopularityPosterImage(ctx, item, posters[popularityPosterKey(item)], posterX, posterY, posterWidth, posterHeight)
+  }
+
+  const textX = item.hidePoster ? posterX : posterX + posterWidth + 24
+  const textRight = POPULARITY_POSTER_WIDTH - POPULARITY_POSTER_PAD_X - 124
+  const textWidth = Math.max(120, textRight - textX)
+  setPopularityPosterText(ctx, 29, colors.ink, '750')
+  ctx.fillText(truncateCanvasText(ctx, item.cnTitle, textWidth), textX, y + 52)
+  setPopularityPosterText(ctx, 22, colors.body, '650')
+  ctx.fillText(truncateCanvasText(ctx, item.primaryMeta || compact([item.dayLabel, item.timeRange]), textWidth), textX, y + 85)
+  setPopularityPosterText(ctx, 21, colors.muted, '600')
+  ctx.fillText(truncateCanvasText(ctx, item.secondaryMeta || item.venueLine || compact([item.cinema, item.hall]), textWidth), textX, y + 114)
+
+  const count = Math.max(0, Number(item.popularityCount) || 0)
+  const countX = POPULARITY_POSTER_WIDTH - POPULARITY_POSTER_PAD_X
+  ctx.textAlign = 'right'
+  setPopularityPosterText(ctx, 48, '#1f1f1c', '800')
+  ctx.fillText(String(count), countX, y + 58)
+  setPopularityPosterText(ctx, 18, colors.muted, '650')
+  ctx.fillText('人已排', countX, y + 83)
+
+  const barWidth = 96
+  const barHeight = 8
+  const barX = countX - barWidth
+  const barY = y + 102
+  fillRoundRect(ctx, barX, barY, barWidth, barHeight, 99, colors.barBg)
+  fillRoundRect(ctx, barX, barY, Math.max(4, Math.round(barWidth * count / Math.max(1, maxCount))), barHeight, 99, isTop ? colors.top : colors.bar)
+  ctx.textAlign = 'left'
+}
+
+function drawPopularityPosterFooter(ctx, y) {
+  setPopularityPosterText(ctx, 20, POPULARITY_POSTER_COLORS.muted, '600')
+  ctx.textAlign = 'right'
+  ctx.fillText(`用「${APP_SHARE_NAME}」查看电影节热度`, POPULARITY_POSTER_WIDTH - POPULARITY_POSTER_PAD_X, y + 42)
+  ctx.textAlign = 'left'
+}
+
+async function createPopularityPosterImage(spec, options = {}) {
+  if (typeof document === 'undefined') return null
+  const rows = Array.isArray(spec && spec.rows) ? spec.rows : []
+  if (!rows.length) return null
+  const height = POPULARITY_POSTER_HEADER_H + rows.length * POPULARITY_POSTER_ROW_H + POPULARITY_POSTER_FOOTER_H
+  const pixelRatio = Math.max(1, Math.min(window.devicePixelRatio || 1, height > 5600 ? 1 : (height > 3000 ? 1.35 : 2)))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(POPULARITY_POSTER_WIDTH * pixelRatio)
+  canvas.height = Math.round(height * pixelRatio)
+  canvas.style.width = `${POPULARITY_POSTER_WIDTH}px`
+  canvas.style.height = `${height}px`
+  const ctx = canvas.getContext('2d')
+  ctx.scale(pixelRatio, pixelRatio)
+  ctx.textBaseline = 'alphabetic'
+
+  const posters = await hydratePopularityPosterImages(rows)
+  drawPopularityPosterHeader(ctx, { ...spec, height })
+  const maxCount = Math.max(1, Number(rows[0] && rows[0].popularityCount) || 1)
+  rows.forEach((item, index) => drawPopularityPosterRow(ctx, item, index, maxCount, posters))
+  drawPopularityPosterFooter(ctx, POPULARITY_POSTER_HEADER_H + rows.length * POPULARITY_POSTER_ROW_H)
+
+  try {
+    return {
+      url: canvas.toDataURL('image/png'),
+      filename: `${options.festivalName || 'festival'}-popularity-${spec.rankType || 'rank'}.png`,
+      width: POPULARITY_POSTER_WIDTH,
+      height
     }
   } catch (error) {
     return null
@@ -2109,10 +2518,42 @@ function PlanPage({
   )
 }
 
-function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmId, loading, error, updatedAt, visibleLimit, onRefresh, onLoadMore, onAbout, openFilm }) {
+function PopularityExportSheet({ open, activeRankLabel, limit, loading, onLimit, onClose, onConfirm }) {
+  if (!open) return null
+  return (
+    <div className="action-sheet-mask" onClick={loading ? undefined : onClose}>
+      <div className="rank-export-sheet" onClick={event => event.stopPropagation()}>
+        <div className="poster-grip" />
+        <div className="rank-export-title">导出热度榜</div>
+        <div className="rank-export-meta">生成当前{activeRankLabel}长图</div>
+        <div className="rank-export-options">
+          {POPULARITY_EXPORT_LIMIT_OPTIONS.map(item => (
+            <button
+              className={`rank-export-option ${limit === item.limit ? 'is-picked' : ''}`}
+              type="button"
+              key={item.limit}
+              onClick={() => onLimit(item.limit)}
+              disabled={loading}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="poster-actions">
+          <button className="poster-secondary" type="button" onClick={onClose} disabled={loading}>取消</button>
+          <button className={`poster-primary ${loading ? 'is-disabled' : ''}`} type="button" onClick={onConfirm} disabled={loading}>
+            {loading ? '生成中' : '生成长图'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmId, activeRankType, onRankTypeChange, loading, error, updatedAt, visibleLimit, onRefresh, onLoadMore, onExport, onAbout, openFilm }) {
   const loadMoreRef = useRef(null)
   const loadMoreTriggerRef = useRef(0)
-  const rankRows = useMemo(() => buildPopularityRows(screenings, popularity, POPULARITY_RANK_MAX_LIMIT), [screenings, popularity])
+  const rankRows = useMemo(() => buildPopularityRows(activeRankType, screenings, popularity, POPULARITY_RANK_MAX_LIMIT), [activeRankType, screenings, popularity])
   const rows = useMemo(() => rankRows.slice(0, visibleLimit), [rankRows, visibleLimit])
   const canLoadMore = visibleLimit < POPULARITY_RANK_MAX_LIMIT && rows.length < rankRows.length
   const max = rows[0]?.popularityCount || 1
@@ -2120,7 +2561,7 @@ function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmI
 
   useEffect(() => {
     if (!loading) loadMoreTriggerRef.current = 0
-  }, [loading])
+  }, [activeRankType, loading])
 
   useEffect(() => {
     const target = loadMoreRef.current
@@ -2147,11 +2588,29 @@ function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmI
           <h1>{festivalName}</h1>
           <span>热度榜</span>
         </div>
+        <div className="popularity-rank-tabs">
+          {POPULARITY_RANK_TABS.map(item => (
+            <button
+              className={`popularity-rank-tab ${activeRankType === item.key ? 'is-active' : ''}`}
+              type="button"
+              key={item.key}
+              onClick={() => onRankTypeChange(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <div className="popularity-meta">{meta}</div>
-        <button className={`popularity-refresh ${loading ? 'is-loading' : ''}`} type="button" onClick={onRefresh} disabled={loading}>
-          <RefreshCw aria-hidden="true" />
-          <span>{loading ? '更新中' : '刷新'}</span>
-        </button>
+        <div className="popularity-hero-actions">
+          <button className="popularity-export" type="button" onClick={onExport}>
+            <Download aria-hidden="true" />
+            <span>导出</span>
+          </button>
+          <button className={`popularity-refresh ${loading ? 'is-loading' : ''}`} type="button" onClick={onRefresh} disabled={loading}>
+            <RefreshCw aria-hidden="true" />
+            <span>{loading ? '更新中' : '刷新'}</span>
+          </button>
+        </div>
       </div>
 
       {error ? <div className="popularity-error">{error}</div> : null}
@@ -2163,16 +2622,20 @@ function PopularityPage({ festivalName, screenings, popularity, posterSrcByFilmI
             const isTop = rank <= 3
             const width = Math.max(4, Math.round((item.popularityCount / max) * 100))
             const src = posterSrcByFilmId[item.filmId] || String(item.posterSrc || '').replace(/^\/assets\/posters\//, '/posters/')
+            const primaryMeta = item.primaryMeta || compact([item.dayLabel, item.timeRange])
+            const secondaryMeta = item.secondaryMeta || formatVenueLine(item)
             return (
-              <button className="popularity-row" type="button" key={item.id} onClick={() => openFilm(item.filmId)}>
+              <button className={`popularity-row ${item.hidePoster ? 'is-no-poster' : ''} ${item.filmId ? '' : 'is-static'}`} type="button" key={item.id} onClick={() => item.filmId && openFilm(item.filmId)}>
                 <span className={`popularity-rank ${isTop ? 'is-top' : ''}`}>{rank}</span>
-                <span className={`popularity-poster ${src ? '' : 'is-placeholder'}`}>
-                  {src ? <img src={src} alt={item.cnTitle} loading="lazy" /> : <span>{item.cnTitle.replace(/\s*\(4K\)/, '')}</span>}
-                </span>
+                {item.hidePoster ? null : (
+                  <span className={`popularity-poster ${src ? '' : 'is-placeholder'}`}>
+                    {src ? <img src={src} alt={item.cnTitle} loading="lazy" /> : <span>{String(item.posterText || item.cnTitle || '').replace(/\s*\(4K\)/, '')}</span>}
+                  </span>
+                )}
                 <span className="popularity-info">
                   <span className="popularity-film-title">{item.cnTitle}</span>
-                  <span className="popularity-time">{item.dayLabel} {item.timeRange}</span>
-                  <span className="popularity-venue">{formatVenueLine(item)}</span>
+                  {primaryMeta ? <span className="popularity-time">{primaryMeta}</span> : null}
+                  {secondaryMeta ? <span className="popularity-venue">{secondaryMeta}</span> : null}
                 </span>
                 <span className="popularity-count">
                   <span className="popularity-count-main">{item.popularityCount}</span>
@@ -3118,7 +3581,8 @@ export default function FestivalWebApp() {
   const [activeSchemeId, setActiveSchemeId] = useStoredState('activeSchemeId', DEFAULT_SCHEME_ID)
   const [filmFieldConfig, setFilmFieldConfig] = useStoredState('filmFieldConfig', DEFAULT_FILM_FIELD_CONFIG)
   const [scheduleFieldConfig, setScheduleFieldConfig] = useStoredState('scheduleFieldConfig', DEFAULT_SCHEDULE_FIELD_CONFIG)
-  const [popularity, setPopularity] = useState({})
+  const [popularity, setPopularity] = useState(() => readPopularitySnapshot(festivalId).counts)
+  const [popularityUpdatedAt, setPopularityUpdatedAt] = useState(() => readPopularitySnapshot(festivalId).fetchedAt)
   const [detailFilm, setDetailFilm] = useState(null)
   const [smartOpen, setSmartOpen] = useState(false)
   const [smartLoading, setSmartLoading] = useState(false)
@@ -3142,7 +3606,11 @@ export default function FestivalWebApp() {
   const [popularityRankUpdatedAt, setPopularityRankUpdatedAt] = useState(0)
   const [popularityRankLoading, setPopularityRankLoading] = useState(false)
   const [popularityRankError, setPopularityRankError] = useState('')
+  const [popularityRankType, setPopularityRankType] = useState('screening')
   const [popularityRankLimit, setPopularityRankLimit] = useState(POPULARITY_RANK_INITIAL_LIMIT)
+  const [popularityExportSheetOpen, setPopularityExportSheetOpen] = useState(false)
+  const [popularityExportLimit, setPopularityExportLimit] = useState(20)
+  const [popularityExportLoading, setPopularityExportLoading] = useState(false)
   const [schemeDialog, setSchemeDialog] = useState(null)
   const [schemeNameDraft, setSchemeNameDraft] = useState('')
   const [planNoteDialog, setPlanNoteDialog] = useState(null)
@@ -3153,6 +3621,9 @@ export default function FestivalWebApp() {
   const toastTimerRef = useRef(null)
   const scrollPositionsRef = useRef({ films: 0, schedule: 0, plan: 0, popularity: 0 })
   const popularitySyncSignatureRef = useRef('')
+  const popularityRequestRef = useRef(null)
+  const popularityRef = useRef(popularity)
+  const popularityUpdatedAtRef = useRef(popularityUpdatedAt)
   const popularityRankRequestRef = useRef(null)
 
   const switchTab = nextTab => {
@@ -3229,13 +3700,44 @@ export default function FestivalWebApp() {
   const plan = useMemo(() => schedule.buildPlan(selectedIds, allScreenings), [selectedIds, allScreenings])
   const popularityRankSource = hasPositivePopularityCounts(popularityRankCounts) ? popularityRankCounts : popularity
 
-  const refreshPopularityRank = (force = false) => {
-    if (!allScreeningIds.length) return
+  const applyPopularityCounts = (counts, options) => {
+    const source = options || {}
+    const fetchedAt = source.fetchedAt || Date.now()
+    const normalized = normalizePopularityCounts(counts, validScreeningIds, { keepZero: true })
+    const nextCounts = source.replace
+      ? normalized
+      : { ...(popularityRef.current || {}), ...normalized }
+    popularityRef.current = nextCounts
+    popularityUpdatedAtRef.current = fetchedAt
+    setPopularity(nextCounts)
+    setPopularityUpdatedAt(fetchedAt)
+    writePopularitySnapshot(festivalId, nextCounts, fetchedAt)
+    if (source.rank) {
+      setPopularityRankCounts(nextCounts)
+      setPopularityRankUpdatedAt(fetchedAt)
+    } else if (source.mergeRank && hasPositivePopularityCounts(popularityRankCounts)) {
+      setPopularityRankCounts(prev => ({ ...(prev || {}), ...normalized }))
+      setPopularityRankUpdatedAt(fetchedAt)
+    }
+    return { counts: nextCounts, fetchedAt }
+  }
+
+  const requestPopularitySnapshot = (force = false) => {
+    if (!allScreeningIds.length) {
+      return Promise.resolve({
+        counts: popularityRef.current || {},
+        fetchedAt: popularityUpdatedAtRef.current || 0
+      })
+    }
     const now = Date.now()
-    if (popularityRankRequestRef.current) return
-    if (!force && hasPositivePopularityCounts(popularityRankCounts) && popularityRankUpdatedAt && now - popularityRankUpdatedAt < POPULARITY_RANK_REFRESH_MS) return
-    setPopularityRankLoading(true)
-    setPopularityRankError('')
+    const cachedCounts = popularityRef.current || {}
+    const cachedAt = popularityUpdatedAtRef.current || 0
+    if (!force && hasPositivePopularityCounts(cachedCounts) && cachedAt && now - cachedAt < POPULARITY_RANK_REFRESH_MS) {
+      return Promise.resolve({ counts: cachedCounts, fetchedAt: cachedAt, cached: true })
+    }
+    if (popularityRequestRef.current) {
+      return popularityRequestRef.current
+    }
     const request = fetch('/api/popularity/get', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3245,9 +3747,35 @@ export default function FestivalWebApp() {
       })
     }).then(res => res.json()).then(result => {
       if (!result.ok) throw new Error(result.error || '热度更新失败')
-      const nextCounts = result.screeningCounts || {}
+      return applyPopularityCounts(result.screeningCounts || {}, {
+        replace: true,
+        fetchedAt: Date.now()
+      })
+    }).finally(() => {
+      popularityRequestRef.current = null
+    })
+    popularityRequestRef.current = request
+    return request
+  }
+
+  const refreshPopularityRank = (force = false) => {
+    if (!allScreeningIds.length) return
+    const now = Date.now()
+    if (popularityRankRequestRef.current) return
+    const cachedCounts = hasPositivePopularityCounts(popularityRankCounts) ? popularityRankCounts : (popularityRef.current || {})
+    const cachedAt = popularityRankUpdatedAt || popularityUpdatedAtRef.current || 0
+    if (!force && hasPositivePopularityCounts(cachedCounts) && cachedAt && now - cachedAt < POPULARITY_RANK_REFRESH_MS) {
+      setPopularityRankCounts(cachedCounts)
+      setPopularityRankUpdatedAt(cachedAt)
+      return
+    }
+    setPopularityRankLoading(true)
+    setPopularityRankError('')
+    const request = requestPopularitySnapshot(force).then(result => {
+      const nextCounts = result.counts || {}
+      const fetchedAt = result.fetchedAt || Date.now()
       setPopularityRankCounts(nextCounts)
-      setPopularityRankUpdatedAt(hasPositivePopularityCounts(nextCounts) ? Date.now() : 0)
+      setPopularityRankUpdatedAt(hasPositivePopularityCounts(nextCounts) ? fetchedAt : 0)
     }).catch(() => {
       setPopularityRankError('热度更新失败，稍后再试')
     }).finally(() => {
@@ -3260,7 +3788,62 @@ export default function FestivalWebApp() {
   const loadMorePopularityRank = () => {
     if (popularityRankLimit >= POPULARITY_RANK_MAX_LIMIT || popularityRankLoading || popularityRankRequestRef.current) return
     setPopularityRankLimit(Math.min(popularityRankLimit + POPULARITY_RANK_STEP, POPULARITY_RANK_MAX_LIMIT))
-    refreshPopularityRank(true)
+  }
+
+  const switchPopularityRankType = type => {
+    if (!POPULARITY_RANK_TABS.some(item => item.key === type) || type === popularityRankType) return
+    setPopularityRankType(type)
+    setPopularityRankLimit(POPULARITY_RANK_INITIAL_LIMIT)
+  }
+
+  const popularityExportRows = limit => {
+    return buildPopularityRows(popularityRankType, allScreenings, popularityRankSource, limit)
+      .slice(0, limit)
+      .map(item => {
+        const poster = posterSrcByFilmId[item.filmId] || String(item.posterSrc || '').replace(/^\/assets\/posters\//, '/posters/')
+        return {
+          ...item,
+          posterSrc: poster,
+          posterSrcs: poster ? [poster] : []
+        }
+      })
+  }
+
+  const openPopularityExport = () => {
+    const rows = popularityExportRows(10)
+    if (!rows.length) {
+      showToast('暂无热度数据')
+      return
+    }
+    trackUsageEvent('export_poster', festivalId)
+    setPopularityExportLimit(20)
+    setPopularityExportSheetOpen(true)
+  }
+
+  const confirmPopularityExport = async () => {
+    if (popularityExportLoading) return
+    const limit = Number(popularityExportLimit) || 20
+    const rows = popularityExportRows(limit)
+    if (!rows.length) {
+      showToast('暂无热度数据')
+      return
+    }
+    setPopularityExportLoading(true)
+    const image = await createPopularityPosterImage({
+      festivalName,
+      rankLabel: popularityRankLabel(popularityRankType),
+      rankType: popularityRankType,
+      metaText: `来自「${APP_SHARE_NAME}」用户的真实选场数据 · ${formatRankUpdatedAt(popularityRankUpdatedAt || popularityUpdatedAt)}`,
+      rows
+    }, { festivalName })
+    setPopularityExportLoading(false)
+    setPopularityExportSheetOpen(false)
+    if (image) {
+      setPosterPreview(image)
+      showToast('热度榜长图已生成')
+    } else {
+      showToast('生成失败')
+    }
   }
 
   useEffect(() => {
@@ -3280,14 +3863,32 @@ export default function FestivalWebApp() {
 
   useEffect(() => {
     setPopularityRankLimit(POPULARITY_RANK_INITIAL_LIMIT)
-  }, [allScreeningIdsSignature, festivalId])
+  }, [allScreeningIdsSignature, festivalId, popularityRankType])
+
+  useEffect(() => {
+    popularityRef.current = popularity
+  }, [popularity])
+
+  useEffect(() => {
+    popularityUpdatedAtRef.current = popularityUpdatedAt
+  }, [popularityUpdatedAt])
+
+  useEffect(() => {
+    if (scheduleFieldConfig.popularity === false) return
+    const snapshot = readPopularitySnapshot(festivalId, validScreeningIds)
+    if (!snapshot.fetchedAt || snapshot.fetchedAt <= (popularityUpdatedAtRef.current || 0)) return
+    popularityRef.current = snapshot.counts
+    popularityUpdatedAtRef.current = snapshot.fetchedAt
+    setPopularity(snapshot.counts)
+    setPopularityUpdatedAt(snapshot.fetchedAt)
+  }, [allScreeningIdsSignature, festivalId, scheduleFieldConfig.popularity, validScreeningIds])
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
   }, [])
 
   useEffect(() => {
-    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || ticketSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog || planNoteDialog || miniappAnnouncementOpen)
+    const hasBlockingOverlay = !!(detailFilm || smartOpen || importMode || exportSheetOpen || posterSheetOpen || ticketSheetOpen || popularityExportSheetOpen || posterPreview || imagePreview || aboutOpen || schemeDialog || planNoteDialog || miniappAnnouncementOpen)
     if (!hasBlockingOverlay || typeof document === 'undefined') return
     const body = document.body
     const scrollY = window.scrollY || 0
@@ -3309,7 +3910,7 @@ export default function FestivalWebApp() {
       body.style.width = previousWidth
       window.scrollTo(0, scrollY)
     }
-  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, ticketSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog, planNoteDialog, miniappAnnouncementOpen])
+  }, [detailFilm, smartOpen, importMode, exportSheetOpen, posterSheetOpen, ticketSheetOpen, popularityExportSheetOpen, posterPreview, imagePreview, aboutOpen, schemeDialog, planNoteDialog, miniappAnnouncementOpen])
 
   useEffect(() => {
     setMarks(prev => applyFilmMarkAliases(films, prev))
@@ -3330,7 +3931,7 @@ export default function FestivalWebApp() {
 
   useEffect(() => {
     if (tab === 'popularity') refreshPopularityRank(false)
-  }, [tab, allScreeningIdsSignature, festivalId])
+  }, [tab, allScreeningIdsSignature, festivalId, popularityUpdatedAt])
 
   useEffect(() => {
     if (!posterSheetOpen || !plan.selected.length) {
@@ -3362,7 +3963,10 @@ export default function FestivalWebApp() {
 
   useEffect(() => {
     if (scheduleFieldConfig.popularity === false) {
+      popularityRef.current = {}
+      popularityUpdatedAtRef.current = 0
       setPopularity({})
+      setPopularityUpdatedAt(0)
       fetch('/api/popularity/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3372,16 +3976,7 @@ export default function FestivalWebApp() {
     }
     if (!allScreeningIds.length) return
     const timer = window.setTimeout(() => {
-      fetch('/api/popularity/get', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          festivalId,
-          screeningIds: allScreeningIds
-        })
-      }).then(res => res.json()).then(result => {
-        if (result.ok) setPopularity(result.screeningCounts || {})
-      }).catch(() => {})
+      requestPopularitySnapshot(false).catch(() => {})
     }, 1200)
     return () => window.clearTimeout(timer)
   }, [allScreeningIdsSignature, festivalId, scheduleFieldConfig.popularity])
@@ -3405,7 +4000,10 @@ export default function FestivalWebApp() {
         })
       }).then(res => res.json()).then(result => {
         if (result.ok) {
-          setPopularity(prev => ({ ...prev, ...(result.screeningCounts || {}) }))
+          applyPopularityCounts(result.screeningCounts || {}, {
+            fetchedAt: Date.now(),
+            mergeRank: true
+          })
         }
       }).catch(() => {})
     }, 1500)
@@ -3829,12 +4427,15 @@ export default function FestivalWebApp() {
           screenings={allScreenings}
           popularity={popularityRankSource}
           posterSrcByFilmId={posterSrcByFilmId}
+          activeRankType={popularityRankType}
+          onRankTypeChange={switchPopularityRankType}
           loading={popularityRankLoading}
           error={popularityRankError}
-          updatedAt={popularityRankUpdatedAt}
+          updatedAt={popularityRankUpdatedAt || popularityUpdatedAt}
           visibleLimit={popularityRankLimit}
           onRefresh={() => refreshPopularityRank(true)}
           onLoadMore={loadMorePopularityRank}
+          onExport={openPopularityExport}
           onAbout={openAbout}
           openFilm={openFilm}
         />
@@ -3866,6 +4467,15 @@ export default function FestivalWebApp() {
         open={miniappAnnouncementOpen}
         onClose={closeMiniappAnnouncement}
         onExportText={openMiniappExportText}
+      />
+      <PopularityExportSheet
+        open={popularityExportSheetOpen}
+        activeRankLabel={popularityRankLabel(popularityRankType)}
+        limit={popularityExportLimit}
+        loading={popularityExportLoading}
+        onLimit={setPopularityExportLimit}
+        onClose={() => !popularityExportLoading && setPopularityExportSheetOpen(false)}
+        onConfirm={confirmPopularityExport}
       />
       <SmartPlanModal open={smartOpen} onClose={() => !smartLoading && setSmartOpen(false)} onSubmit={runSmartPlan} loading={smartLoading} progress={smartProgress} error={smartError} />
       <ExportActionSheet open={exportSheetOpen} onClose={() => setExportSheetOpen(false)} onPoster={openPosterExport} onText={openTextExport} onTicket={openTicketExport} />

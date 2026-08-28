@@ -113,6 +113,14 @@ function totalKey(festivalId, event) {
   return `festival:${festivalId}:events:total:${event}`
 }
 
+function dailyHashKey(festivalId, day) {
+  return `festival:${festivalId}:events:${day}`
+}
+
+function totalHashKey(festivalId) {
+  return `festival:${festivalId}:events:total`
+}
+
 function incrementMemory(festivalId, day, event, count) {
   const amount = Math.max(1, Math.min(Number(count) || 1, 1000))
   const daily = dailyKey(festivalId, day, event)
@@ -147,11 +155,13 @@ async function trackEvents(payload) {
   }
 
   const pipeline = redis.pipeline()
+  const dailyHash = dailyHashKey(festivalId, day)
+  const totalHash = totalHashKey(festivalId)
   events.forEach(item => {
-    pipeline.incrby(dailyKey(festivalId, day, item.event), item.count)
-    pipeline.expire(dailyKey(festivalId, day, item.event), RETENTION_DAYS * 86400)
-    pipeline.incrby(totalKey(festivalId, item.event), item.count)
+    pipeline.hincrby(dailyHash, item.event, item.count)
+    pipeline.hincrby(totalHash, item.event, item.count)
   })
+  pipeline.expire(dailyHash, RETENTION_DAYS * 86400)
   try {
     await pipeline.exec()
     return { events, day, stored: 'redis' }
@@ -178,8 +188,10 @@ async function getEventSummary(payload) {
 
   const pipeline = redis.pipeline()
   days.forEach(day => {
+    pipeline.hgetall(dailyHashKey(festivalId, day))
     events.forEach(event => pipeline.get(dailyKey(festivalId, day, event)))
   })
+  pipeline.hgetall(totalHashKey(festivalId))
   events.forEach(event => pipeline.get(totalKey(festivalId, event)))
   let values
   try {
@@ -193,15 +205,17 @@ async function getEventSummary(payload) {
   let index = 0
   const daily = days.map(day => {
     const counts = {}
+    const hashValues = values[index++] || {}
     events.forEach(event => {
-      counts[event] = Number(values[index]) || 0
+      counts[event] = (Number(hashValues && hashValues[event]) || 0) + (Number(values[index]) || 0)
       index += 1
     })
     return { day: dayLabel(day), events: counts }
   })
   const totals = {}
+  const totalHashValues = values[index++] || {}
   events.forEach(event => {
-    totals[event] = Number(values[index]) || 0
+    totals[event] = (Number(totalHashValues && totalHashValues[event]) || 0) + (Number(values[index]) || 0)
     index += 1
   })
   return { stored: 'redis', days: daily, totals }
